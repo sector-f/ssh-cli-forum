@@ -27,7 +27,7 @@ func main() {
 	s := &ssh.Server{
 		Addr:             "127.0.0.1:2222",
 		Handler:          sessionHandler,
-		PublicKeyHandler: authHandler(service),
+		PublicKeyHandler: authHandler(logger, service),
 	}
 	defer s.Close()
 
@@ -38,11 +38,20 @@ func sessionHandler(s ssh.Session) {
 
 }
 
-func authHandler(service forum.Service) func(ctx ssh.Context, key ssh.PublicKey) bool {
+func authHandler(logger *zap.Logger, service forum.Service) func(ctx ssh.Context, key ssh.PublicKey) bool {
 	return func(ctx ssh.Context, key ssh.PublicKey) bool {
+		logger := logger.With(
+			zap.String("username", ctx.User()),
+			zap.String("session_id", ctx.SessionID()),
+			zap.String("remote_addr", ctx.RemoteAddr().String()),
+			zap.String("client_version", ctx.ClientVersion()),
+		)
+
+		logger.Info("Authenticating user")
+
 		user, err := service.GetUserByUsername(ctx.User())
 		if err != nil {
-			// TODO: add logging
+			logger.Debug("Failed to get user by username", zap.Error(err))
 			return false
 		}
 
