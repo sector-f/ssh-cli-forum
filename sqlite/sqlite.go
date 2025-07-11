@@ -5,10 +5,13 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/sector-f/ssh-cli-forum/forum"
+	"go.uber.org/zap"
 )
 
 type Service struct {
-	db *sql.DB
+	logger *zap.Logger
+	db     *sql.DB
 }
 
 type Invite struct {
@@ -40,13 +43,13 @@ type Comment struct {
 }
 
 // Open opens a connection and creates tables if they don't exist.
-func Open(path string) (*Service, error) {
+func Open(logger *zap.Logger, path string) (forum.Service, error) {
 	db, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return nil, err
 	}
 
-	s := &Service{db: db}
+	s := &Service{logger: logger, db: db}
 
 	if err := s.createTables(); err != nil {
 		return nil, err

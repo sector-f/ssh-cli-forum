@@ -3,17 +3,29 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
+	"go.uber.org/zap"
 
 	"github.com/spf13/cobra"
 )
 
-var dbPath string
+var (
+	dbPath string
+	logger *zap.Logger
+)
 
 func main() {
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		fmt.Fprint(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer logger.Sync()
+
 	var rootCmd = &cobra.Command{
 		Use:   "forumctl",
 		Short: "CLI tool for managing the forum database",
@@ -107,7 +119,7 @@ func main() {
 // === Invite Handlers ===
 
 func listInvites(cmd *cobra.Command, args []string) error {
-	s, err := sqlite.Open(dbPath)
+	s, err := sqlite.Open(logger, dbPath)
 	if err != nil {
 		return err
 	}
@@ -122,7 +134,7 @@ func listInvites(cmd *cobra.Command, args []string) error {
 }
 
 func createInvite(cmd *cobra.Command, args []string) error {
-	s, err := sqlite.Open(dbPath)
+	s, err := sqlite.Open(logger, dbPath)
 	if err != nil {
 		return err
 	}
@@ -144,7 +156,7 @@ func createInvite(cmd *cobra.Command, args []string) error {
 // === User Handlers ===
 
 func listUsers(cmd *cobra.Command, args []string) error {
-	s, err := sqlite.Open(dbPath)
+	s, err := sqlite.Open(logger, dbPath)
 	if err != nil {
 		return err
 	}
@@ -159,7 +171,7 @@ func listUsers(cmd *cobra.Command, args []string) error {
 }
 
 func createUser(cmd *cobra.Command, args []string) error {
-	s, err := sqlite.Open(dbPath)
+	s, err := sqlite.Open(logger, dbPath)
 	if err != nil {
 		return err
 	}
@@ -178,7 +190,7 @@ func createUser(cmd *cobra.Command, args []string) error {
 // === Board Handlers ===
 
 func listBoards(cmd *cobra.Command, args []string) error {
-	s, err := sqlite.Open(dbPath)
+	s, err := sqlite.Open(logger, dbPath)
 	if err != nil {
 		return err
 	}
@@ -193,7 +205,7 @@ func listBoards(cmd *cobra.Command, args []string) error {
 }
 
 func createBoard(cmd *cobra.Command, args []string) error {
-	s, err := sqlite.Open(dbPath)
+	s, err := sqlite.Open(logger, dbPath)
 	if err != nil {
 		return err
 	}
@@ -209,7 +221,7 @@ func createBoard(cmd *cobra.Command, args []string) error {
 // === Thread Handlers ===
 
 func listThreads(cmd *cobra.Command, args []string) error {
-	s, err := sqlite.Open(dbPath)
+	s, err := sqlite.Open(logger, dbPath)
 	if err != nil {
 		return err
 	}
@@ -234,7 +246,7 @@ func listThreads(cmd *cobra.Command, args []string) error {
 // === Comment Handlers ===
 
 func listComments(cmd *cobra.Command, args []string) error {
-	s, err := sqlite.Open(dbPath)
+	s, err := sqlite.Open(logger, dbPath)
 	if err != nil {
 		return err
 	}

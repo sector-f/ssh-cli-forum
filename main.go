@@ -1,15 +1,25 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"os"
 
 	"github.com/gliderlabs/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
+	"go.uber.org/zap"
 )
 
 func main() {
-	service, err := sqlite.Open("./forum.db")
+	logger, err := zap.NewDevelopment()
+	if err != nil {
+		fmt.Fprint(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer logger.Sync()
+
+	service, err := sqlite.Open(logger, "./forum.db")
 	if err != nil {
 		log.Fatal(err)
 	}

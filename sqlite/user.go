@@ -5,10 +5,11 @@ import (
 
 	"github.com/gliderlabs/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
+	"go.uber.org/zap"
 )
 
 func (s *Service) CreateUser(username, pubKey, inviteCode string, isAdmin bool) (*forum.User, error) {
-	key, err := ssh.ParsePublicKey([]byte(pubKey))
+	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKey))
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +49,7 @@ func (s *Service) GetUserByID(id int) (*forum.User, error) {
 	if err := row.Scan(&u.ID, &u.Username, &pubKeyStr, &inviteCode, &u.IsAdmin); err != nil {
 		return nil, err
 	}
-	key, err := ssh.ParsePublicKey([]byte(pubKeyStr))
+	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKeyStr))
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +61,8 @@ func (s *Service) GetUserByID(id int) (*forum.User, error) {
 }
 
 func (s *Service) GetUserByUsername(username string) (*forum.User, error) {
+	s.logger.Debug("Getting user by username", zap.String("username", username))
+
 	row := s.db.QueryRow(`SELECT id, username, pubkey, invite_code, is_admin FROM users WHERE username = ?`, username)
 	var u forum.User
 	var pubKeyStr string
@@ -67,7 +70,7 @@ func (s *Service) GetUserByUsername(username string) (*forum.User, error) {
 	if err := row.Scan(&u.ID, &u.Username, &pubKeyStr, &inviteCode, &u.IsAdmin); err != nil {
 		return nil, err
 	}
-	key, err := ssh.ParsePublicKey([]byte(pubKeyStr))
+	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKeyStr))
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +96,7 @@ func (s *Service) ListUsers() ([]*forum.User, error) {
 		if err := rows.Scan(&u.ID, &u.Username, &pubKeyStr, &inviteCode, &u.IsAdmin); err != nil {
 			return nil, err
 		}
-		key, err := ssh.ParsePublicKey([]byte(pubKeyStr))
+		key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKeyStr))
 		if err != nil {
 			return nil, err
 		}
