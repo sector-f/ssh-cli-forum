@@ -58,9 +58,9 @@ func Open(path string) (*Service, error) {
 func (s *Service) createTables() error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS invites (
-			code TEXT PRIMARY KEY
+			code TEXT PRIMARY KEY,
 			created_at DATETIME NOT NULL,
-			expires_at DATETIME NOT NULL,
+			expires_at DATETIME NOT NULL
 		);`,
 
 		`CREATE TABLE IF NOT EXISTS users (

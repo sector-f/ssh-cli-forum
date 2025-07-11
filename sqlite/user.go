@@ -7,24 +7,31 @@ import (
 )
 
 func (s *Service) CreateUser(username, pubKey, inviteCode string, isAdmin bool) (*forum.User, error) {
+	var nullableInviteCode sql.NullString
+	if inviteCode != "" {
+		nullableInviteCode.String = inviteCode
+		nullableInviteCode.Valid = true
+	}
+
 	res, err := s.db.Exec(`
 		INSERT INTO users (username, pubkey, invite_code, is_admin)
 		VALUES (?, ?, ?, ?)
-	`, username, pubKey, inviteCode, isAdmin)
+	`, username, pubKey, nullableInviteCode, isAdmin)
 	if err != nil {
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
 
-	return &forum.User{
+	user := &forum.User{
 		ID:       int(id),
 		Username: username,
 		PubKey:   pubKey,
 		IsAdmin:  isAdmin,
-		Invite: &forum.Invite{
-			Code: inviteCode,
-		},
-	}, nil
+	}
+	if nullableInviteCode.Valid {
+		user.Invite = &forum.Invite{Code: inviteCode}
+	}
+	return user, nil
 }
 
 func (s *Service) GetUserByID(id int) (*forum.User, error) {

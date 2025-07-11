@@ -52,11 +52,12 @@ func main() {
 		RunE:  listUsers,
 	}
 	var userCreate = &cobra.Command{
-		Use:   "create [username] [pubkey] [inviteCode]",
+		Use:   "create [username] [pubkey]",
 		Short: "Create a user",
-		Args:  cobra.ExactArgs(3),
+		Args:  cobra.ExactArgs(2),
 		RunE:  createUser,
 	}
+	userCreate.Flags().Bool("admin", false, "Make the new user an admin")
 	userCmd.AddCommand(userList, userCreate)
 	rootCmd.AddCommand(userCmd)
 
@@ -164,9 +165,9 @@ func createUser(cmd *cobra.Command, args []string) error {
 	}
 	username := args[0]
 	pubKey := args[1]
-	inviteCode := args[2]
 
-	user, err := s.CreateUser(username, pubKey, inviteCode, false)
+	isAdmin, _ := cmd.Flags().GetBool("admin")
+	user, err := s.CreateUser(username, pubKey, "", isAdmin)
 	if err != nil {
 		return err
 	}
