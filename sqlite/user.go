@@ -3,10 +3,16 @@ package sqlite
 import (
 	"database/sql"
 
+	"github.com/gliderlabs/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
 func (s *Service) CreateUser(username, pubKey, inviteCode string, isAdmin bool) (*forum.User, error) {
+	key, err := ssh.ParsePublicKey([]byte(pubKey))
+	if err != nil {
+		return nil, err
+	}
+
 	var nullableInviteCode sql.NullString
 	if inviteCode != "" {
 		nullableInviteCode.String = inviteCode
@@ -25,7 +31,7 @@ func (s *Service) CreateUser(username, pubKey, inviteCode string, isAdmin bool) 
 	user := &forum.User{
 		ID:       int(id),
 		Username: username,
-		PubKey:   pubKey,
+		PubKey:   key,
 		IsAdmin:  isAdmin,
 	}
 	if nullableInviteCode.Valid {
@@ -37,10 +43,16 @@ func (s *Service) CreateUser(username, pubKey, inviteCode string, isAdmin bool) 
 func (s *Service) GetUserByID(id int) (*forum.User, error) {
 	row := s.db.QueryRow(`SELECT id, username, pubkey, invite_code, is_admin FROM users WHERE id = ?`, id)
 	var u forum.User
+	var pubKeyStr string
 	var inviteCode sql.NullString
-	if err := row.Scan(&u.ID, &u.Username, &u.PubKey, &inviteCode, &u.IsAdmin); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &pubKeyStr, &inviteCode, &u.IsAdmin); err != nil {
 		return nil, err
 	}
+	key, err := ssh.ParsePublicKey([]byte(pubKeyStr))
+	if err != nil {
+		return nil, err
+	}
+	u.PubKey = key
 	if inviteCode.Valid {
 		u.Invite = &forum.Invite{Code: inviteCode.String}
 	}
@@ -50,10 +62,16 @@ func (s *Service) GetUserByID(id int) (*forum.User, error) {
 func (s *Service) GetUserByUsername(username string) (*forum.User, error) {
 	row := s.db.QueryRow(`SELECT id, username, pubkey, invite_code, is_admin FROM users WHERE username = ?`, username)
 	var u forum.User
+	var pubKeyStr string
 	var inviteCode sql.NullString
-	if err := row.Scan(&u.ID, &u.Username, &u.PubKey, &inviteCode, &u.IsAdmin); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &pubKeyStr, &inviteCode, &u.IsAdmin); err != nil {
 		return nil, err
 	}
+	key, err := ssh.ParsePublicKey([]byte(pubKeyStr))
+	if err != nil {
+		return nil, err
+	}
+	u.PubKey = key
 	if inviteCode.Valid {
 		u.Invite = &forum.Invite{Code: inviteCode.String}
 	}
@@ -70,10 +88,16 @@ func (s *Service) ListUsers() ([]*forum.User, error) {
 	var users []*forum.User
 	for rows.Next() {
 		var u forum.User
+		var pubKeyStr string
 		var inviteCode sql.NullString
-		if err := rows.Scan(&u.ID, &u.Username, &u.PubKey, &inviteCode, &u.IsAdmin); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &pubKeyStr, &inviteCode, &u.IsAdmin); err != nil {
 			return nil, err
 		}
+		key, err := ssh.ParsePublicKey([]byte(pubKeyStr))
+		if err != nil {
+			return nil, err
+		}
+		u.PubKey = key
 		if inviteCode.Valid {
 			u.Invite = &forum.Invite{Code: inviteCode.String}
 		}
