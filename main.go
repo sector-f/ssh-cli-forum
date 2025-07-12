@@ -5,7 +5,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/gliderlabs/ssh"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/ssh"
+	"github.com/charmbracelet/wish"
+	"github.com/charmbracelet/wish/activeterm"
+	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
 	"go.uber.org/zap"
@@ -26,21 +30,36 @@ func main() {
 		log.Fatal(err)
 	}
 
-	s := &ssh.Server{
-		Addr:             "127.0.0.1:2222",
-		Handler:          sessionHandler,
-		PublicKeyHandler: authHandler(logger, service),
+	w, err := wish.NewServer(
+		wish.WithAddress("127.0.0.1:2222"),
+		wish.WithPublicKeyAuth(authHandler(logger, service)),
+		wish.WithMiddleware(
+			bubbletea.Middleware(teaHandler),
+			activeterm.Middleware(),
+		),
+	)
+	if err != nil {
+		log.Fatal(err)
 	}
-	defer s.Close()
 
-	log.Fatal(s.ListenAndServe())
+	log.Fatal(w.ListenAndServe())
 }
 
-func sessionHandler(s ssh.Session) {
-
+type model struct {
+	user string
 }
 
-func authHandler(logger *zap.Logger, service forum.Service) func(ctx ssh.Context, key ssh.PublicKey) bool {
+func (model) Init() tea.Cmd {
+	return tea.Quit
+}
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	return m, tea.Quit
+}
+func (m model) View() string {
+	return fmt.Sprintf("Successfully authenticated as %s\n", m.user)
+}
+
+func authHandler(logger *zap.Logger, service forum.Service) ssh.PublicKeyHandler {
 	return func(ctx ssh.Context, key ssh.PublicKey) bool {
 		username := ctx.User()
 
@@ -67,4 +86,12 @@ func authHandler(logger *zap.Logger, service forum.Service) func(ctx ssh.Context
 		// ssh.KeysEqual is the canonical way to compare public keys.
 		return ssh.KeysEqual(user.PubKey, key)
 	}
+}
+
+func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
+	m := model{
+		user: s.User(),
+	}
+
+	return m, []tea.ProgramOption{}
 }
