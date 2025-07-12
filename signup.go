@@ -1,10 +1,8 @@
 package main
 
 import (
-	"strings"
-
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
@@ -16,8 +14,10 @@ type signupModel struct {
 	service forum.Service
 	logger  *zap.Logger
 
-	invite   textinput.Model
-	username textinput.Model
+	form *huh.Form
+
+	invite   string
+	username string
 
 	width  int
 	height int
@@ -30,19 +30,18 @@ func newSignupModel(s ssh.Session, service forum.Service, logger *zap.Logger) si
 		logger:  logger,
 	}
 
-	m.invite = textinput.New()
-	m.invite.Focus()
-	m.invite.Prompt = "Invite code: "
-
-	m.username = textinput.New()
-	m.username.Blur()
-	m.username.Prompt = "Username: "
+	m.form = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().Title("Enter invite code").Prompt("> ").Value(&m.invite),
+			huh.NewInput().Title("Enter username").Prompt("> ").Value(&m.username),
+		),
+	)
 
 	return m
 }
 
 func (m signupModel) Init() tea.Cmd {
-	return textinput.Blink
+	return m.form.Init()
 }
 
 func (m signupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -52,24 +51,26 @@ func (m signupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "ctrl+d":
+		case "ctrl+c", "esc":
 			return m, tea.Quit
 		}
 	}
 
-	var cmd tea.Cmd
-	if m.invite.Focused() {
-		m.invite, cmd = m.invite.Update(msg)
-	} else if m.username.Focused() {
-		m.username, cmd = m.username.Update(msg)
+	var cmds []tea.Cmd
+
+	form, cmd := m.form.Update(msg)
+	if f, ok := form.(*huh.Form); ok {
+		m.form = f
+		cmds = append(cmds, cmd)
 	}
 
-	return m, cmd
-}
-func (m signupModel) View() string {
-	var sb strings.Builder
-	sb.WriteString(m.invite.View() + "\n")
-	sb.WriteString(m.username.View() + "\n")
+	if m.form.State == huh.StateCompleted {
+		cmds = append(cmds, tea.Quit)
+	}
 
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, sb.String())
+	return m, tea.Batch(cmds...)
+}
+
+func (m signupModel) View() string {
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.form.View())
 }
