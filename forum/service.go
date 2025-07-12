@@ -1,6 +1,10 @@
 package forum
 
-import "time"
+import (
+	"time"
+
+	"github.com/charmbracelet/ssh"
+)
 
 type Service interface {
 	// Invites
@@ -9,7 +13,7 @@ type Service interface {
 	GetInvite(code string) (*Invite, error)
 
 	// Users
-	CreateUser(username, pubKey, inviteCode string, isAdmin bool) (*User, error)
+	CreateUser(username string, pubKey ssh.PublicKey, inviteCode string, isAdmin bool) (*User, error)
 	GetUserByID(id int) (*User, error)
 	GetUserByUsername(username string) (*User, error)
 	ListUsers() ([]*User, error)

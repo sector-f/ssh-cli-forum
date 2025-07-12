@@ -3,17 +3,12 @@ package sqlite
 import (
 	"database/sql"
 
-	"github.com/gliderlabs/ssh"
+	"github.com/charmbracelet/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"go.uber.org/zap"
 )
 
-func (s *Service) CreateUser(username, pubKey, inviteCode string, isAdmin bool) (*forum.User, error) {
-	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKey))
-	if err != nil {
-		return nil, err
-	}
-
+func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string, isAdmin bool) (*forum.User, error) {
 	var nullableInviteCode sql.NullString
 	if inviteCode != "" {
 		nullableInviteCode.String = inviteCode
@@ -23,7 +18,7 @@ func (s *Service) CreateUser(username, pubKey, inviteCode string, isAdmin bool) 
 	res, err := s.db.Exec(`
 		INSERT INTO users (username, pubkey, invite_code, is_admin)
 		VALUES (?, ?, ?, ?)
-	`, username, pubKey, nullableInviteCode, isAdmin)
+	`, username, pubKey.Marshal(), nullableInviteCode, isAdmin)
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +27,7 @@ func (s *Service) CreateUser(username, pubKey, inviteCode string, isAdmin bool) 
 	user := &forum.User{
 		ID:       int(id),
 		Username: username,
-		PubKey:   key,
+		PubKey:   pubKey,
 		IsAdmin:  isAdmin,
 	}
 	if nullableInviteCode.Valid {
@@ -44,12 +39,12 @@ func (s *Service) CreateUser(username, pubKey, inviteCode string, isAdmin bool) 
 func (s *Service) GetUserByID(id int) (*forum.User, error) {
 	row := s.db.QueryRow(`SELECT id, username, pubkey, invite_code, is_admin FROM users WHERE id = ?`, id)
 	var u forum.User
-	var pubKeyStr string
+	var pubKey []byte
 	var inviteCode sql.NullString
-	if err := row.Scan(&u.ID, &u.Username, &pubKeyStr, &inviteCode, &u.IsAdmin); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, pubKey, &inviteCode, &u.IsAdmin); err != nil {
 		return nil, err
 	}
-	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKeyStr))
+	key, err := ssh.ParsePublicKey(pubKey)
 	if err != nil {
 		return nil, err
 	}

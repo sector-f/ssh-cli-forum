@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/charmbracelet/ssh"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"go.uber.org/zap"
@@ -20,7 +21,7 @@ type Invite struct {
 
 type User struct {
 	Username   string
-	PubKey     string
+	PubKey     ssh.PublicKey
 	InviteCode string
 	IsAdmin    bool
 }
@@ -69,7 +70,7 @@ func (s *Service) createTables() error {
 		`CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL UNIQUE,
-			pubkey TEXT NOT NULL,
+			pubkey BLOB NOT NULL,
 			invite_code TEXT,
 			is_admin BOOLEAN NOT NULL DEFAULT 0,
 			FOREIGN KEY (invite_code) REFERENCES invites(code)

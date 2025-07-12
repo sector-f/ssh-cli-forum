@@ -1,3 +1,4 @@
 *.db
 ssh-cli-forum
 cmd/forumctl/forumctl
+id_*

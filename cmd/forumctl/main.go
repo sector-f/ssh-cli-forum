@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/charmbracelet/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
 	"go.uber.org/zap"
@@ -176,7 +177,12 @@ func createUser(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	username := args[0]
-	pubKey := args[1]
+	pubKeyString := args[1]
+
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKeyString))
+	if err != nil {
+		return err
+	}
 
 	isAdmin, _ := cmd.Flags().GetBool("admin")
 	user, err := s.CreateUser(username, pubKey, "", isAdmin)
