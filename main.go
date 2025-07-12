@@ -11,6 +11,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var signupUsername = "signup"
+
 func main() {
 	logger, err := zap.NewDevelopment()
 	if err != nil {
@@ -40,14 +42,21 @@ func sessionHandler(s ssh.Session) {
 
 func authHandler(logger *zap.Logger, service forum.Service) func(ctx ssh.Context, key ssh.PublicKey) bool {
 	return func(ctx ssh.Context, key ssh.PublicKey) bool {
+		username := ctx.User()
+
 		logger := logger.With(
-			zap.String("username", ctx.User()),
+			zap.String("username", username),
 			zap.String("session_id", ctx.SessionID()),
 			zap.String("remote_addr", ctx.RemoteAddr().String()),
 			zap.String("client_version", ctx.ClientVersion()),
 		)
 
 		logger.Info("Authenticating user")
+
+		// Allow any key when signing up
+		if username == signupUsername {
+			return true
+		}
 
 		user, err := service.GetUserByUsername(ctx.User())
 		if err != nil {
