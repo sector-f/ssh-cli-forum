@@ -60,12 +60,12 @@ func (s *Service) GetUserByUsername(username string) (*forum.User, error) {
 
 	row := s.db.QueryRow(`SELECT id, username, pubkey, invite_code, is_admin FROM users WHERE username = ?`, username)
 	var u forum.User
-	var pubKeyStr string
+	var pubKey []byte
 	var inviteCode sql.NullString
-	if err := row.Scan(&u.ID, &u.Username, &pubKeyStr, &inviteCode, &u.IsAdmin); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &pubKey, &inviteCode, &u.IsAdmin); err != nil {
 		return nil, err
 	}
-	key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKeyStr))
+	key, err := ssh.ParsePublicKey(pubKey)
 	if err != nil {
 		return nil, err
 	}
