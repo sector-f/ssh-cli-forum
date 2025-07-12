@@ -34,7 +34,7 @@ func main() {
 		wish.WithAddress("127.0.0.1:2222"),
 		wish.WithPublicKeyAuth(authHandler(logger, service)),
 		wish.WithMiddleware(
-			bubbletea.Middleware(teaHandler),
+			bubbletea.Middleware(teaHandler(logger, service)),
 			activeterm.Middleware(),
 		),
 	)
@@ -43,20 +43,6 @@ func main() {
 	}
 
 	log.Fatal(w.ListenAndServe())
-}
-
-type model struct {
-	user string
-}
-
-func (model) Init() tea.Cmd {
-	return tea.Quit
-}
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	return m, tea.Quit
-}
-func (m model) View() string {
-	return fmt.Sprintf("Successfully authenticated as %s\n", m.user)
 }
 
 func authHandler(logger *zap.Logger, service forum.Service) ssh.PublicKeyHandler {
@@ -83,15 +69,23 @@ func authHandler(logger *zap.Logger, service forum.Service) ssh.PublicKeyHandler
 			return false
 		}
 
-		// ssh.KeysEqual is the canonical way to compare public keys.
 		return ssh.KeysEqual(user.PubKey, key)
 	}
 }
 
-func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
-	m := model{
-		user: s.User(),
-	}
+func teaHandler(logger *zap.Logger, service forum.Service) bubbletea.Handler {
+	return func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
+		user := s.User()
 
-	return m, []tea.ProgramOption{}
+		if user == signupUsername {
+			m := newSignupModel(s, service, logger)
+			return m, []tea.ProgramOption{tea.WithAltScreen()}
+		}
+
+		m := mainModel{
+			user: user,
+		}
+
+		return m, []tea.ProgramOption{}
+	}
 }
