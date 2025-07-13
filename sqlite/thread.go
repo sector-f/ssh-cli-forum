@@ -38,6 +38,7 @@ func (s *Service) GetThreadByID(id int) (forum.Thread, error) {
 		Title:    t.Title,
 		Author:   author,
 		Comments: comments,
+		Body:     t.Body,
 	}
 
 	return thread, nil
@@ -66,6 +67,7 @@ func (s *Service) ListThreads(boardID int) ([]forum.ThreadListing, error) {
 			ID:     t.ID,
 			Title:  t.Title,
 			Author: author,
+			Body:   t.Body,
 		}
 
 		threads = append(threads, thread)

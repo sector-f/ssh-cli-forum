@@ -35,13 +35,14 @@ type ThreadListing struct {
 	ID     int
 	Title  string
 	Author User
+	Body   string
 }
 
 type Thread struct {
-	ID     int
-	Title  string
-	Author User
-	// TODO: add body here
+	ID       int
+	Title    string
+	Author   User
+	Body     string
 	Comments []Comment
 }
 

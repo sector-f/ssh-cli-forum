@@ -40,6 +40,7 @@ type Thread struct {
 	Title    string
 	BoardID  int
 	AuthorID int
+	Body     string
 }
 
 type Comment struct {
@@ -94,6 +95,7 @@ func (s *Service) createTables() error {
 			title TEXT NOT NULL,
 			board_id INTEGER NOT NULL,
 			author_id INTEGER NOT NULL,
+			body TEXT NOT NULL,
 			FOREIGN KEY (board_id) REFERENCES boards(id),
 			FOREIGN KEY (author_id) REFERENCES users(id)
 		);`,
