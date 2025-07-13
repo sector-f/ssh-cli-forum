@@ -14,31 +14,25 @@ type Invite struct {
 }
 
 type User struct {
-	ID       int
 	Username string
 	PubKey   ssh.PublicKey
 	IsAdmin  bool
-	Invite   *Invite
 }
 
 type Board struct {
-	ID      int
 	Name    string
-	Threads []*Thread
+	Threads []Thread
 }
 
 type Thread struct {
-	ID       int
-	Title    string
-	Author   *User
-	Board    *Board
-	Comments []*Comment
+	Title  string
+	Author User
+	// TODO: add body here
+	Comments []Comment
 }
 
 type Comment struct {
-	ID       int
-	Author   *User
+	Author   User
 	Body     string
 	PostedAt time.Time
-	Thread   *Thread
 }

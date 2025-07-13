@@ -23,6 +23,7 @@ type Invite struct {
 }
 
 type User struct {
+	ID         int
 	Username   string
 	PubKey     ssh.PublicKey
 	InviteCode string
@@ -30,16 +31,19 @@ type User struct {
 }
 
 type Board struct {
+	ID   int
 	Name string
 }
 
 type Thread struct {
+	ID       int
 	Title    string
 	BoardID  int
 	AuthorID int
 }
 
 type Comment struct {
+	ID       int
 	ThreadID int
 	AuthorID int
 	Body     string

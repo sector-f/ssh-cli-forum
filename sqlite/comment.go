@@ -6,27 +6,24 @@ import (
 	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
-func (s *Service) CreateComment(threadID int, authorID int, body string) (*forum.Comment, error) {
+func (s *Service) CreateComment(threadID int, authorID int, body string) error {
 	postedAt := time.Now()
-	res, err := s.db.Exec(`
+	_, err := s.db.Exec(`
 		INSERT INTO comments (thread_id, author_id, body, posted_at)
 		VALUES (?, ?, ?, ?)
 	`, threadID, authorID, body, postedAt)
+
+	return err
+}
+
+func (s *Service) ListComments(threadID int) ([]forum.Comment, error) {
+	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
-	id, _ := res.LastInsertId()
-	return &forum.Comment{
-		ID:       int(id),
-		Thread:   &forum.Thread{ID: threadID},
-		Author:   &forum.User{ID: authorID},
-		Body:     body,
-		PostedAt: postedAt,
-	}, nil
-}
+	defer tx.Rollback()
 
-func (s *Service) ListComments(threadID int) ([]*forum.Comment, error) {
-	rows, err := s.db.Query(`
+	rows, err := tx.Query(`
 		SELECT id, author_id, body, posted_at FROM comments
 		WHERE thread_id = ? ORDER BY posted_at ASC
 	`, threadID)
@@ -35,20 +32,30 @@ func (s *Service) ListComments(threadID int) ([]*forum.Comment, error) {
 	}
 	defer rows.Close()
 
-	var comments []*forum.Comment
+	var comments []forum.Comment
 	for rows.Next() {
-		var c forum.Comment
-		var postedAt time.Time
-		if err := rows.Scan(&c.ID, &c.Author.ID, &c.Body, &postedAt); err != nil {
+		var c Comment
+		if err := rows.Scan(&c.ID, &c.AuthorID, &c.Body, &c.PostedAt); err != nil {
 			return nil, err
 		}
-		c.Thread = &forum.Thread{ID: threadID}
-		c.PostedAt = postedAt
-		comments = append(comments, &c)
+
+		user, err := s.GetUserByID(c.AuthorID)
+		if err != nil {
+			return nil, err
+		}
+
+		comment := forum.Comment{
+			Author:   user,
+			Body:     c.Body,
+			PostedAt: c.PostedAt,
+		}
+
+		comments = append(comments, comment)
 	}
 	return comments, nil
 }
 
+/*
 func (s *Service) GetCommentByID(id int) (*forum.Comment, error) {
 	row := s.db.QueryRow(`SELECT thread_id, author_id, body, posted_at FROM comments WHERE id = ?`, id)
 	var c forum.Comment
@@ -60,3 +67,4 @@ func (s *Service) GetCommentByID(id int) (*forum.Comment, error) {
 	c.PostedAt = postedAt
 	return &c, nil
 }
+*/
