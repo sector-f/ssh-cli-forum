@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/charmbracelet/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
@@ -18,13 +19,13 @@ func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode s
 	defer tx.Rollback()
 
 	var (
-		dbUser string
-		dbCode string
+		dbUser   string
+		dbInvite forum.Invite
 	)
 
 	// Verify that invite code exists in database
-	row := tx.QueryRow("SELECT code FROM invites WHERE code = ?", inviteCode)
-	err = row.Scan(&dbCode)
+	row := tx.QueryRow("SELECT code, created_at, expires_at FROM invites WHERE code = ?", inviteCode)
+	err = row.Scan(&dbInvite.Code, &dbInvite.CreatedAt, &dbInvite.ExpiresAt)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return nil, forum.ErrInviteInvalid
@@ -33,11 +34,20 @@ func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode s
 		return nil, forum.ErrUnknown
 	}
 
+	// Verify that invite code has not expired
+	if time.Now().After(dbInvite.ExpiresAt) {
+		return nil, forum.ErrInviteExpired
+	}
+
 	// Verify that invite code hasn't been used
-	row = tx.QueryRow("SELECT username FROM users WHERE code = ?", inviteCode)
+	row = tx.QueryRow("SELECT username FROM users WHERE invite_code = ?", inviteCode)
 	err = row.Scan(&dbUser)
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, forum.ErrInviteUsed
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// Invite code hasn't been used, continue
+	case err != nil:
+		s.logger.Error("Error checking invite code usage", zap.Error(err))
+		return nil, forum.ErrUnknown
 	}
 
 	// Verify that username isn't taken
@@ -69,6 +79,8 @@ func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode s
 		IsAdmin:  isAdmin,
 		Invite:   &forum.Invite{Code: inviteCode},
 	}
+
+	s.logger.Info("Created user", zap.String("username", username))
 
 	return user, nil
 }

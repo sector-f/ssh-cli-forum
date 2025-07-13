@@ -48,9 +48,9 @@ func main() {
 		RunE:  listInvites,
 	}
 	var inviteCreate = &cobra.Command{
-		Use:   "create [code] [expires-in-days]",
+		Use:   "create [code]",
 		Short: "Create an invite",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(1),
 		RunE:  createInvite,
 	}
 	inviteCreate.Flags().Duration("duration", 7*24*time.Hour, "How long until invite expires")

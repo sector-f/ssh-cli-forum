@@ -10,6 +10,7 @@ import (
 var (
 	ErrUserExists    = errors.New("username already exists")
 	ErrInviteUsed    = errors.New("invite code has already been used")
+	ErrInviteExpired = errors.New("invite code has expired")
 	ErrInviteInvalid = errors.New("invalid invite code")
 	ErrUnknown       = errors.New("unknown error")
 )
