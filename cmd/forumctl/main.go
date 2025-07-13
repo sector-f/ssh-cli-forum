@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/ssh"
-	"github.com/sector-f/ssh-cli-forum/forum"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
 	"go.uber.org/zap"
 
@@ -146,11 +145,11 @@ func createInvite(cmd *cobra.Command, args []string) error {
 	}
 	expiresAt := time.Now().Add(dur)
 	isAdmin, _ := cmd.Flags().GetBool("admin")
-	invite, err := s.CreateInvite(code, expiresAt, isAdmin)
+	err = s.CreateInvite(code, expiresAt, isAdmin)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Created invite: %s (expires %s)\n", invite.Code, invite.ExpiresAt.Format(time.RFC3339))
+	fmt.Printf("Created invite: %s (expires %s)\n", code, expiresAt.Format(time.RFC3339))
 	return nil
 }
 
@@ -166,7 +165,7 @@ func listUsers(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	for _, u := range users {
-		fmt.Printf("ID: %d | %s | Admin: %t | Invite: %v\n", u.ID, u.Username, u.IsAdmin, u.Invite)
+		fmt.Printf("%s | Admin: %t \n", u.Username, u.IsAdmin)
 	}
 	return nil
 }
@@ -185,11 +184,11 @@ func createUser(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	user, err := s.CreateUser(username, pubKey, inviteCode)
+	err = s.CreateUser(username, pubKey, inviteCode)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Created user: %s (ID %d)\n", user.Username, user.ID)
+	fmt.Printf("Created user: %s\n", username)
 	return nil
 }
 
@@ -205,7 +204,7 @@ func listBoards(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	for _, b := range boards {
-		fmt.Printf("ID: %d | %s\n", b.ID, b.Name)
+		fmt.Printf("%s\n", b.Name)
 	}
 	return nil
 }
@@ -216,11 +215,11 @@ func createBoard(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	name := args[0]
-	board, err := s.CreateBoard(name)
+	err = s.CreateBoard(name)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Created board: %s (ID %d)\n", board.Name, board.ID)
+	fmt.Printf("Created board: %s\n", name)
 	return nil
 }
 
@@ -232,19 +231,14 @@ func listThreads(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	boardID, _ := cmd.Flags().GetInt("board")
-	var threads []*forum.Thread
-	if boardID > 0 {
-		threads, err = s.ListThreads(boardID)
-	} else {
-		// You could add a fallback to list all threads here if desired
-		return fmt.Errorf("please provide --board to filter threads")
-	}
+	threads, err := s.ListThreads(boardID)
 	if err != nil {
 		return err
 	}
+
 	for _, t := range threads {
-		fmt.Printf("ID: %d | Title: %s | BoardID: %d | AuthorID: %d\n",
-			t.ID, t.Title, t.Board.ID, t.Author.ID)
+		fmt.Printf("Title: %s | Author: %s\n",
+			t.Title, t.Author.Username)
 	}
 	return nil
 }
@@ -265,8 +259,8 @@ func listComments(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	for _, c := range comments {
-		fmt.Printf("ID: %d | AuthorID: %d | Posted: %s\n%s\n\n",
-			c.ID, c.Author.ID, c.PostedAt.Format(time.RFC3339), c.Body)
+		fmt.Printf("Author: %s | Posted: %s\n",
+			c.Author.Username, c.PostedAt.Format(time.RFC3339))
 	}
 	return nil
 }
