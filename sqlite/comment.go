@@ -45,6 +45,7 @@ func (s *Service) ListComments(threadID int) ([]forum.Comment, error) {
 		}
 
 		comment := forum.Comment{
+			ID:       c.ID,
 			Author:   user,
 			Body:     c.Body,
 			PostedAt: c.PostedAt,
@@ -54,17 +55,3 @@ func (s *Service) ListComments(threadID int) ([]forum.Comment, error) {
 	}
 	return comments, nil
 }
-
-/*
-func (s *Service) GetCommentByID(id int) (*forum.Comment, error) {
-	row := s.db.QueryRow(`SELECT thread_id, author_id, body, posted_at FROM comments WHERE id = ?`, id)
-	var c forum.Comment
-	var postedAt time.Time
-	if err := row.Scan(&c.Thread.ID, &c.Author.ID, &c.Body, &postedAt); err != nil {
-		return nil, err
-	}
-	c.ID = id
-	c.PostedAt = postedAt
-	return &c, nil
-}
-*/

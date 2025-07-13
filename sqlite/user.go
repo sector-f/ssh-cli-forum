@@ -94,6 +94,7 @@ func (s *Service) GetUserByID(id int) (forum.User, error) {
 	u.PubKey = key
 
 	forumUser := forum.User{
+		ID:       u.ID,
 		Username: u.Username,
 		PubKey:   u.PubKey,
 		IsAdmin:  u.IsAdmin,
@@ -118,6 +119,7 @@ func (s *Service) GetUserByUsername(username string) (forum.User, error) {
 	u.PubKey = key
 
 	forumUser := forum.User{
+		ID:       u.ID,
 		Username: u.Username,
 		PubKey:   u.PubKey,
 		IsAdmin:  u.IsAdmin,
@@ -147,6 +149,7 @@ func (s *Service) ListUsers() ([]forum.User, error) {
 		u.PubKey = key
 
 		forumUser := forum.User{
+			ID:       u.ID,
 			Username: u.Username,
 			PubKey:   u.PubKey,
 			IsAdmin:  u.IsAdmin,

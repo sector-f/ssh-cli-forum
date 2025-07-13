@@ -14,6 +14,7 @@ type Invite struct {
 }
 
 type User struct {
+	ID       int
 	Username string
 	PubKey   ssh.PublicKey
 	IsAdmin  bool

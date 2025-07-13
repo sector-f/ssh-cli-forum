@@ -34,6 +34,7 @@ func (s *Service) GetThreadByID(id int) (forum.Thread, error) {
 	}
 
 	thread := forum.Thread{
+		ID:       t.ID,
 		Title:    t.Title,
 		Author:   author,
 		Comments: comments,
