@@ -17,12 +17,12 @@ var (
 
 type Service interface {
 	// Invites
-	CreateInvite(code string, expiresAt time.Time) (*Invite, error)
+	CreateInvite(code string, expiresAt time.Time, isAdmin bool) (*Invite, error)
 	ListInvites() ([]*Invite, error)
 	GetInvite(code string) (*Invite, error)
 
 	// Users
-	CreateUser(username string, pubKey ssh.PublicKey, inviteCode string, isAdmin bool) (*User, error)
+	CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) (*User, error)
 	GetUserByID(id int) (*User, error)
 	GetUserByUsername(username string) (*User, error)
 	ListUsers() ([]*User, error)

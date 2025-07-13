@@ -10,6 +10,7 @@ type Invite struct {
 	Code      string
 	CreatedAt time.Time
 	ExpiresAt time.Time
+	IsAdmin   bool
 }
 
 type User struct {

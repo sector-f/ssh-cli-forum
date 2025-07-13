@@ -54,6 +54,7 @@ func main() {
 		RunE:  createInvite,
 	}
 	inviteCreate.Flags().Duration("duration", 7*24*time.Hour, "How long until invite expires")
+	inviteCreate.Flags().Bool("admin", false, "Make the new user an admin")
 	inviteCmd.AddCommand(inviteList, inviteCreate)
 	rootCmd.AddCommand(inviteCmd)
 
@@ -65,12 +66,11 @@ func main() {
 		RunE:  listUsers,
 	}
 	var userCreate = &cobra.Command{
-		Use:   "create [username] [pubkey]",
+		Use:   "create [username] [invite_code] [pubkey]",
 		Short: "Create a user",
-		Args:  cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(3),
 		RunE:  createUser,
 	}
-	userCreate.Flags().Bool("admin", false, "Make the new user an admin")
 	userCmd.AddCommand(userList, userCreate)
 	rootCmd.AddCommand(userCmd)
 
@@ -145,8 +145,8 @@ func createInvite(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	expiresAt := time.Now().Add(dur)
-
-	invite, err := s.CreateInvite(code, expiresAt)
+	isAdmin, _ := cmd.Flags().GetBool("admin")
+	invite, err := s.CreateInvite(code, expiresAt, isAdmin)
 	if err != nil {
 		return err
 	}
@@ -177,15 +177,15 @@ func createUser(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	username := args[0]
-	pubKeyString := args[1]
+	inviteCode := args[1]
+	pubKeyString := args[2]
 
 	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKeyString))
 	if err != nil {
 		return err
 	}
 
-	isAdmin, _ := cmd.Flags().GetBool("admin")
-	user, err := s.CreateUser(username, pubKey, "", isAdmin)
+	user, err := s.CreateUser(username, pubKey, inviteCode)
 	if err != nil {
 		return err
 	}

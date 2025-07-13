@@ -78,7 +78,7 @@ func (m signupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if username == "" || invite == "" {
 			m.err = errors.New("username and invite code are required")
 		} else {
-			_, m.err = m.service.CreateUser(username, m.sess.PublicKey(), invite, false)
+			_, m.err = m.service.CreateUser(username, m.sess.PublicKey(), invite)
 			if m.err == nil {
 				cmds = append(cmds, tea.Quit)
 			}

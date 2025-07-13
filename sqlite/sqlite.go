@@ -16,7 +16,10 @@ type Service struct {
 }
 
 type Invite struct {
-	Code string
+	Code      string
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	IsAdmin   bool
 }
 
 type User struct {
@@ -64,7 +67,8 @@ func (s *Service) createTables() error {
 		`CREATE TABLE IF NOT EXISTS invites (
 			code TEXT PRIMARY KEY,
 			created_at DATETIME NOT NULL,
-			expires_at DATETIME NOT NULL
+			expires_at DATETIME NOT NULL,
+			is_admin BOOLEAN NOT NULL DEFAULT 0
 		);`,
 
 		`CREATE TABLE IF NOT EXISTS users (

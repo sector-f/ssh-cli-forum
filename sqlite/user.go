@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string, isAdmin bool) (*forum.User, error) {
+func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) (*forum.User, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		s.logger.Error("Error starting transaction", zap.Error(err))
@@ -21,11 +21,12 @@ func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode s
 	var (
 		dbUser   string
 		dbInvite forum.Invite
+		isAdmin  bool
 	)
 
 	// Verify that invite code exists in database
-	row := tx.QueryRow("SELECT code, created_at, expires_at FROM invites WHERE code = ?", inviteCode)
-	err = row.Scan(&dbInvite.Code, &dbInvite.CreatedAt, &dbInvite.ExpiresAt)
+	row := tx.QueryRow("SELECT code, created_at, expires_at, is_admin FROM invites WHERE code = ?", inviteCode)
+	err = row.Scan(&dbInvite.Code, &dbInvite.CreatedAt, &dbInvite.ExpiresAt, &isAdmin)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return nil, forum.ErrInviteInvalid
@@ -57,10 +58,12 @@ func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode s
 		return nil, forum.ErrUserExists
 	}
 
+	// Create the user and associate them with the invite code
 	res, err := tx.Exec(`
 		INSERT INTO users (username, pubkey, invite_code, is_admin)
 		VALUES (?, ?, ?, ?)
 	`, username, pubKey.Marshal(), inviteCode, isAdmin)
+
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +83,7 @@ func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode s
 		Invite:   &forum.Invite{Code: inviteCode},
 	}
 
-	s.logger.Info("Created user", zap.String("username", username))
+	s.logger.Info("Created user", zap.String("username", username), zap.Bool("is_admin", isAdmin))
 
 	return user, nil
 }
