@@ -1,9 +1,12 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"go.uber.org/zap"
@@ -16,11 +19,10 @@ type signupModel struct {
 
 	form *huh.Form
 
-	invite   string
-	username string
-
 	width  int
 	height int
+
+	err error
 }
 
 func newSignupModel(s ssh.Session, service forum.Service, logger *zap.Logger) signupModel {
@@ -32,9 +34,14 @@ func newSignupModel(s ssh.Session, service forum.Service, logger *zap.Logger) si
 
 	m.form = huh.NewForm(
 		huh.NewGroup(
-			huh.NewInput().Title("Enter invite code").Prompt("> ").Value(&m.invite),
-			huh.NewInput().Title("Enter username").Prompt("> ").Value(&m.username),
-		),
+			huh.NewInput().Key("invite").Title("Enter invite code").Prompt("> "),
+			huh.NewInput().Key("username").Title("Enter username").Prompt("> "),
+			huh.NewConfirm().
+				Key("submit").
+				Title("Create account?").
+				Negative("No").
+				Affirmative("Yes"),
+		).WithTheme(huh.ThemeBase()),
 	)
 
 	return m
@@ -65,12 +72,27 @@ func (m signupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.form.State == huh.StateCompleted {
-		cmds = append(cmds, tea.Quit)
+		username := strings.TrimSpace(m.form.GetString("username"))
+		invite := strings.TrimSpace(m.form.GetString("invite"))
+
+		if username == "" || invite == "" {
+			m.err = errors.New("username and invite code are required")
+		} else {
+			_, m.err = m.service.CreateUser(username, m.sess.PublicKey(), invite, false)
+			if m.err == nil {
+				cmds = append(cmds, tea.Quit)
+			}
+		}
 	}
 
 	return m, tea.Batch(cmds...)
 }
 
 func (m signupModel) View() string {
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.form.View())
+	s := m.form.View()
+	if m.err != nil {
+		s = fmt.Sprintf("%s\n\n%s\n", m.err.Error(), s)
+	}
+
+	return s
 }

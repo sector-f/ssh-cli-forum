@@ -1,9 +1,17 @@
 package forum
 
 import (
+	"errors"
 	"time"
 
 	"github.com/charmbracelet/ssh"
+)
+
+var (
+	ErrUserExists    = errors.New("username already exists")
+	ErrInviteUsed    = errors.New("invite code has already been used")
+	ErrInviteInvalid = errors.New("invalid invite code")
+	ErrUnknown       = errors.New("unknown error")
 )
 
 type Service interface {

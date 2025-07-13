@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"errors"
 
 	"github.com/charmbracelet/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
@@ -9,30 +10,66 @@ import (
 )
 
 func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string, isAdmin bool) (*forum.User, error) {
-	var nullableInviteCode sql.NullString
-	if inviteCode != "" {
-		nullableInviteCode.String = inviteCode
-		nullableInviteCode.Valid = true
+	tx, err := s.db.Begin()
+	if err != nil {
+		s.logger.Error("Error starting transaction", zap.Error(err))
+		return nil, forum.ErrUnknown
+	}
+	defer tx.Rollback()
+
+	var (
+		dbUser string
+		dbCode string
+	)
+
+	// Verify that invite code exists in database
+	row := tx.QueryRow("SELECT code FROM invites WHERE code = ?", inviteCode)
+	err = row.Scan(&dbCode)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, forum.ErrInviteInvalid
+	case err != nil:
+		s.logger.Error("Error checking invite code", zap.Error(err))
+		return nil, forum.ErrUnknown
 	}
 
-	res, err := s.db.Exec(`
+	// Verify that invite code hasn't been used
+	row = tx.QueryRow("SELECT username FROM users WHERE code = ?", inviteCode)
+	err = row.Scan(&dbUser)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, forum.ErrInviteUsed
+	}
+
+	// Verify that username isn't taken
+	row = tx.QueryRow("SELECT username FROM users WHERE username = ?", username)
+	err = row.Scan(&dbUser)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, forum.ErrUserExists
+	}
+
+	res, err := tx.Exec(`
 		INSERT INTO users (username, pubkey, invite_code, is_admin)
 		VALUES (?, ?, ?, ?)
-	`, username, pubKey.Marshal(), nullableInviteCode, isAdmin)
+	`, username, pubKey.Marshal(), inviteCode, isAdmin)
 	if err != nil {
 		return nil, err
 	}
 	id, _ := res.LastInsertId()
+
+	err = tx.Commit()
+	if err != nil {
+		s.logger.Error("Error committing transaction", zap.Error(err))
+		return nil, forum.ErrUnknown
+	}
 
 	user := &forum.User{
 		ID:       int(id),
 		Username: username,
 		PubKey:   pubKey,
 		IsAdmin:  isAdmin,
+		Invite:   &forum.Invite{Code: inviteCode},
 	}
-	if nullableInviteCode.Valid {
-		user.Invite = &forum.Invite{Code: inviteCode}
-	}
+
 	return user, nil
 }
 

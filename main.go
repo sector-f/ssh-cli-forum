@@ -18,6 +18,9 @@ import (
 var signupUsername = "signup"
 
 func main() {
+	// TODO: add flag
+	address := "127.0.0.1:2222"
+
 	logger, err := zap.NewDevelopment()
 	if err != nil {
 		fmt.Fprint(os.Stderr, err)
@@ -31,7 +34,7 @@ func main() {
 	}
 
 	w, err := wish.NewServer(
-		wish.WithAddress("127.0.0.1:2222"),
+		wish.WithAddress(address),
 		wish.WithPublicKeyAuth(authHandler(logger, service)),
 		wish.WithMiddleware(
 			bubbletea.Middleware(teaHandler(logger, service)),
@@ -42,6 +45,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	logger.Info("Starting server", zap.String("address", address))
 	log.Fatal(w.ListenAndServe())
 }
 
@@ -79,7 +83,7 @@ func teaHandler(logger *zap.Logger, service forum.Service) bubbletea.Handler {
 
 		if user == signupUsername {
 			m := newSignupModel(s, service, logger)
-			return m, []tea.ProgramOption{tea.WithAltScreen()}
+			return m, []tea.ProgramOption{}
 		}
 
 		m := mainModel{

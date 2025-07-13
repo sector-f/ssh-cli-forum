@@ -71,7 +71,7 @@ func (s *Service) createTables() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL UNIQUE,
 			pubkey BLOB NOT NULL,
-			invite_code TEXT,
+			invite_code TEXT NOT NULL UNIQUE,
 			is_admin BOOLEAN NOT NULL DEFAULT 0,
 			FOREIGN KEY (invite_code) REFERENCES invites(code)
 		);`,
