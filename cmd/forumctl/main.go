@@ -128,7 +128,7 @@ func listInvites(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	for _, i := range invites {
-		fmt.Printf("%s | Created: %s | Expires: %s\n", i.Code, i.CreatedAt.Format(time.RFC3339), i.ExpiresAt.Format(time.RFC3339))
+		fmt.Printf("%s | Is admin: %t | Created: %s | Expires: %s\n", i.Code, i.IsAdmin, i.CreatedAt.Format(time.RFC3339), i.ExpiresAt.Format(time.RFC3339))
 	}
 	return nil
 }
