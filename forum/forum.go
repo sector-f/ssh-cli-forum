@@ -19,12 +19,25 @@ type User struct {
 	IsAdmin  bool
 }
 
+type BoardListing struct {
+	ID   int
+	Name string
+}
+
 type Board struct {
+	ID      int
 	Name    string
-	Threads []Thread
+	Threads []ThreadListing
+}
+
+type ThreadListing struct {
+	ID     int
+	Title  string
+	Author User
 }
 
 type Thread struct {
+	ID     int
 	Title  string
 	Author User
 	// TODO: add body here
@@ -32,6 +45,7 @@ type Thread struct {
 }
 
 type Comment struct {
+	ID       int
 	Author   User
 	Body     string
 	PostedAt time.Time

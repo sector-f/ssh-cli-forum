@@ -29,12 +29,12 @@ type Service interface {
 
 	// Boards
 	CreateBoard(name string) error
-	ListBoards() ([]Board, error)
+	ListBoards() ([]BoardListing, error)
 	GetBoardByID(id int) (Board, error)
 
 	// Threads
 	CreateThread(title string, boardID int, authorID int) error
-	ListThreads(boardID int) ([]Thread, error)
+	ListThreads(boardID int) ([]ThreadListing, error)
 	GetThreadByID(id int) (Thread, error)
 
 	// Comments

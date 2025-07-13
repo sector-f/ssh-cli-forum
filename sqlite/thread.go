@@ -42,14 +42,14 @@ func (s *Service) GetThreadByID(id int) (forum.Thread, error) {
 	return thread, nil
 }
 
-func (s *Service) ListThreads(boardID int) ([]forum.Thread, error) {
+func (s *Service) ListThreads(boardID int) ([]forum.ThreadListing, error) {
 	rows, err := s.db.Query(`SELECT id, title, board_id, author_id FROM threads WHERE board_id = ?`, boardID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var threads []forum.Thread
+	var threads []forum.ThreadListing
 	for rows.Next() {
 		var t Thread
 		if err := rows.Scan(&t.ID, &t.Title, &t.BoardID, &t.AuthorID); err != nil {
@@ -61,7 +61,8 @@ func (s *Service) ListThreads(boardID int) ([]forum.Thread, error) {
 			return nil, err
 		}
 
-		thread := forum.Thread{
+		thread := forum.ThreadListing{
+			ID:     t.ID,
 			Title:  t.Title,
 			Author: author,
 		}
