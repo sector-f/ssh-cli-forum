@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
@@ -33,14 +34,13 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// TODO: figure out some way to convert *zap.Logger into whatever type
-	// the wish structured logging middleware expects.
 	server, err := wish.NewServer(
 		wish.WithAddress(address),
 		wish.WithPublicKeyAuth(authHandler(logger, service)),
 		wish.WithMiddleware(
 			bubbletea.Middleware(tableHandler(logger, service)),
 			signupMiddleware(logger, service),
+			loggingMiddleware(logger),
 			activeterm.Middleware(),
 		),
 	)
@@ -82,6 +82,31 @@ func tableHandler(logger *zap.Logger, service forum.Service) bubbletea.Handler {
 	return func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		m := table.New(logger, service)
 		return m, []tea.ProgramOption{tea.WithAltScreen()}
+	}
+}
+
+func loggingMiddleware(logger *zap.Logger) wish.Middleware {
+	return func(next ssh.Handler) ssh.Handler {
+		return func(sess ssh.Session) {
+			ct := time.Now()
+			pty, _, _ := sess.Pty()
+			logger.Info(
+				"Connected",
+				zap.String("user", sess.User()),
+				zap.String("remote-addr", sess.RemoteAddr().String()),
+				zap.String("term", pty.Term),
+				zap.Int("width", pty.Window.Width),
+				zap.Int("height", pty.Window.Height),
+				zap.String("client-version", sess.Context().ClientVersion()),
+			)
+			next(sess)
+			logger.Info(
+				"Disconnected",
+				zap.String("user", sess.User()),
+				zap.String("remote-addr", sess.RemoteAddr().String()),
+				zap.Duration("duration", time.Since(ct)),
+			)
+		}
 	}
 }
 
