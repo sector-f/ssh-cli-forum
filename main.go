@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/wish/activeterm"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/models/signup"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
 	"go.uber.org/zap"
 )
@@ -82,7 +83,7 @@ func teaHandler(logger *zap.Logger, service forum.Service) bubbletea.Handler {
 		user := s.User()
 
 		if user == signupUsername {
-			m := newSignupModel(s, service, logger)
+			m := signup.New(s, service, logger)
 			return m, []tea.ProgramOption{}
 		}
 

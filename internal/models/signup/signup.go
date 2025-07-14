@@ -1,4 +1,4 @@
-package main
+package signup
 
 import (
 	"errors"
@@ -25,7 +25,7 @@ type signupModel struct {
 	err error
 }
 
-func newSignupModel(s ssh.Session, service forum.Service, logger *zap.Logger) signupModel {
+func New(s ssh.Session, service forum.Service, logger *zap.Logger) tea.Model {
 	m := signupModel{
 		sess:    s,
 		service: service,
