@@ -11,6 +11,10 @@ import (
 )
 
 func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) error {
+	if !isValidUsername(username) {
+		return forum.ErrUsernameInvalid
+	}
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		s.logger.Error("Error starting transaction", zap.Error(err))
@@ -96,7 +100,6 @@ func (s *Service) GetUserByID(id int) (forum.User, error) {
 	forumUser := forum.User{
 		ID:       u.ID,
 		Username: u.Username,
-		PubKey:   u.PubKey,
 		IsAdmin:  u.IsAdmin,
 	}
 
@@ -106,26 +109,33 @@ func (s *Service) GetUserByID(id int) (forum.User, error) {
 func (s *Service) GetUserByUsername(username string) (forum.User, error) {
 	s.logger.Debug("Getting user by username", zap.String("username", username))
 
-	row := s.db.QueryRow(`SELECT id, username, pubkey, invite_code, is_admin FROM users WHERE username = ?`, username)
+	row := s.db.QueryRow(`SELECT id, username, is_admin FROM users WHERE username = ?`, username)
 	var u User
-	var pubKey []byte
-	if err := row.Scan(&u.ID, &u.Username, &pubKey, &u.InviteCode, &u.IsAdmin); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.IsAdmin); err != nil {
 		return forum.User{}, err
 	}
-	key, err := ssh.ParsePublicKey(pubKey)
-	if err != nil {
-		return forum.User{}, err
-	}
-	u.PubKey = key
 
 	forumUser := forum.User{
 		ID:       u.ID,
 		Username: u.Username,
-		PubKey:   u.PubKey,
 		IsAdmin:  u.IsAdmin,
 	}
 
 	return forumUser, nil
+}
+
+func (s *Service) AuthenticateUser(username string, givenKey ssh.PublicKey) bool {
+	row := s.db.QueryRow(`SELECT pubkey FROM users WHERE username = ?`, username)
+	var keyBytes []byte
+	if err := row.Scan(&keyBytes); err != nil {
+		return false
+	}
+	dbKey, err := ssh.ParsePublicKey(keyBytes)
+	if err != nil {
+		return false
+	}
+
+	return ssh.KeysEqual(dbKey, givenKey)
 }
 
 func (s *Service) ListUsers() ([]forum.User, error) {
@@ -151,11 +161,18 @@ func (s *Service) ListUsers() ([]forum.User, error) {
 		forumUser := forum.User{
 			ID:       u.ID,
 			Username: u.Username,
-			PubKey:   u.PubKey,
 			IsAdmin:  u.IsAdmin,
 		}
 
 		users = append(users, forumUser)
 	}
 	return users, nil
+}
+
+func isValidUsername(s string) bool {
+	if s == forum.SignupUsername {
+		return false
+	}
+
+	return true
 }

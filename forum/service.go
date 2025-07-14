@@ -8,11 +8,14 @@ import (
 )
 
 var (
-	ErrUserExists    = errors.New("username already exists")
-	ErrInviteUsed    = errors.New("invite code has already been used")
-	ErrInviteExpired = errors.New("invite code has expired")
-	ErrInviteInvalid = errors.New("invalid invite code")
-	ErrUnknown       = errors.New("unknown error")
+	SignupUsername = "signup"
+
+	ErrUserExists      = errors.New("username already exists")
+	ErrUsernameInvalid = errors.New("username is not valid")
+	ErrInviteUsed      = errors.New("invite code has already been used")
+	ErrInviteExpired   = errors.New("invite code has expired")
+	ErrInviteInvalid   = errors.New("invalid invite code")
+	ErrUnknown         = errors.New("unknown error")
 )
 
 type Service interface {
@@ -25,6 +28,7 @@ type Service interface {
 	CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) error
 	GetUserByID(id int) (User, error)
 	GetUserByUsername(username string) (User, error)
+	AuthenticateUser(username string, givenKey ssh.PublicKey) bool
 	ListUsers() ([]User, error)
 
 	// Boards

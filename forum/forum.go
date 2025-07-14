@@ -2,8 +2,6 @@ package forum
 
 import (
 	"time"
-
-	"github.com/gliderlabs/ssh"
 )
 
 type Invite struct {
@@ -16,7 +14,6 @@ type Invite struct {
 type User struct {
 	ID       int
 	Username string
-	PubKey   ssh.PublicKey
 	IsAdmin  bool
 }
 

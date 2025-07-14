@@ -17,8 +17,6 @@ import (
 	"go.uber.org/zap"
 )
 
-var signupUsername = "signup"
-
 func main() {
 	// TODO: add flag
 	address := "127.0.0.1:2222"
@@ -72,17 +70,11 @@ func authHandler(logger *zap.Logger, service forum.Service) ssh.PublicKeyHandler
 		logger.Info("Authenticating user")
 
 		// Allow any key when signing up
-		if username == signupUsername {
+		if username == forum.SignupUsername {
 			return true
 		}
 
-		user, err := service.GetUserByUsername(ctx.User())
-		if err != nil {
-			logger.Debug("Failed to get user by username", zap.Error(err))
-			return false
-		}
-
-		return ssh.KeysEqual(user.PubKey, key)
+		return service.AuthenticateUser(username, key)
 	}
 }
 
@@ -96,7 +88,7 @@ func tableHandler(logger *zap.Logger, service forum.Service) bubbletea.Handler {
 func signupMiddleware(logger *zap.Logger, service forum.Service) func(next ssh.Handler) ssh.Handler {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(s ssh.Session) {
-			if s.User() != signupUsername {
+			if s.User() != forum.SignupUsername {
 				next(s)
 				return
 			}
