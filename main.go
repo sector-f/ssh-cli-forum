@@ -5,9 +5,14 @@ import (
 	"log"
 	"os"
 
-	"github.com/gliderlabs/ssh"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/ssh"
+	"github.com/charmbracelet/wish"
+	"github.com/charmbracelet/wish/activeterm"
+	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"github.com/sector-f/ssh-cli-forum/internal/signup"
+	"github.com/sector-f/ssh-cli-forum/internal/table"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
 	"go.uber.org/zap"
 )
@@ -30,14 +35,20 @@ func main() {
 		log.Fatal(err)
 	}
 
-	server := ssh.Server{
-		Addr:             address,
-		PublicKeyHandler: authHandler(logger, service),
-		Handler:          handler(logger, service),
-	}
+	// TODO: figure out some way to convert *zap.Logger into whatever type
+	// the wish structured logging middleware expects.
+	server, err := wish.NewServer(
+		wish.WithAddress(address),
+		wish.WithPublicKeyAuth(authHandler(logger, service)),
+		wish.WithMiddleware(
+			bubbletea.Middleware(tableHandler(logger, service)),
+			signupMiddleware(logger, service),
+			activeterm.Middleware(),
+		),
+	)
 
 	// TODO: Add flag for this
-	server.SetOption(ssh.HostKeyFile("./id_ed25519"))
+	// server.SetOption(ssh.HostKeyFile("./id_ed25519"))
 
 	logger.Info("Starting server", zap.String("address", address))
 
@@ -75,33 +86,28 @@ func authHandler(logger *zap.Logger, service forum.Service) ssh.PublicKeyHandler
 	}
 }
 
-func handler(logger *zap.Logger, service forum.Service) ssh.Handler {
-	return func(s ssh.Session) {
-		username := s.User()
+func tableHandler(logger *zap.Logger, service forum.Service) bubbletea.Handler {
+	return func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
+		m := table.New(logger, service)
+		return m, []tea.ProgramOption{tea.WithAltScreen()}
+	}
+}
 
-		logger := logger.With(
-			zap.String("username", username),
-			zap.String("remote_addr", s.RemoteAddr().String()),
-		)
-		defer logger.Info("Disconnected")
+func signupMiddleware(logger *zap.Logger, service forum.Service) func(next ssh.Handler) ssh.Handler {
+	return func(next ssh.Handler) ssh.Handler {
+		return func(s ssh.Session) {
+			if s.User() != signupUsername {
+				next(s)
+				return
+			}
 
-		logger.Info("Got login")
-
-		if username == signupUsername {
 			err := signup.Handler(logger, s, service)
 			if err != nil {
 				fmt.Fprintf(s, "Error: %s\n", err)
 				s.Exit(1)
-				return
 			}
 
 			fmt.Fprintln(s, "User created successfully")
-			s.Exit(0)
-			return
 		}
-
-		fmt.Fprintln(s, "Error: unimplemented function")
-		s.Exit(1)
-		return
 	}
 }

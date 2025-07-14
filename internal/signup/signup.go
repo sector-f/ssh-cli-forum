@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/ssh"
 	"github.com/chzyer/readline"
-	"github.com/gliderlabs/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"go.uber.org/zap"
 )

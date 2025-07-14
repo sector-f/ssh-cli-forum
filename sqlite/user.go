@@ -138,11 +138,11 @@ func (s *Service) ListUsers() ([]forum.User, error) {
 	var users []forum.User
 	for rows.Next() {
 		var u User
-		var pubKeyStr string
-		if err := rows.Scan(&u.ID, &u.Username, &pubKeyStr, &u.InviteCode, &u.IsAdmin); err != nil {
+		var pubKey []byte
+		if err := rows.Scan(&u.ID, &u.Username, &pubKey, &u.InviteCode, &u.IsAdmin); err != nil {
 			return nil, err
 		}
-		key, _, _, _, err := ssh.ParseAuthorizedKey([]byte(pubKeyStr))
+		key, err := ssh.ParsePublicKey(pubKey)
 		if err != nil {
 			return nil, err
 		}
