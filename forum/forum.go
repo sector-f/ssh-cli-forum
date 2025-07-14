@@ -3,7 +3,7 @@ package forum
 import (
 	"time"
 
-	"github.com/charmbracelet/ssh"
+	"github.com/gliderlabs/ssh"
 )
 
 type Invite struct {

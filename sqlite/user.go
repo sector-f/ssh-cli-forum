@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/charmbracelet/ssh"
+	"github.com/gliderlabs/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"go.uber.org/zap"
 )

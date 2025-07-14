@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/charmbracelet/ssh"
+	"github.com/gliderlabs/ssh"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"go.uber.org/zap"

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/charmbracelet/ssh"
+	"github.com/gliderlabs/ssh"
 )
 
 var (

@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/charmbracelet/ssh"
+	"github.com/gliderlabs/ssh"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
 	"go.uber.org/zap"
 

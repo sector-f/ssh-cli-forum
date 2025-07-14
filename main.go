@@ -5,13 +5,9 @@ import (
 	"log"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/ssh"
-	"github.com/charmbracelet/wish"
-	"github.com/charmbracelet/wish/activeterm"
-	"github.com/charmbracelet/wish/bubbletea"
+	"github.com/gliderlabs/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
-	"github.com/sector-f/ssh-cli-forum/internal/models/signup"
+	"github.com/sector-f/ssh-cli-forum/internal/signup"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
 	"go.uber.org/zap"
 )
@@ -34,20 +30,21 @@ func main() {
 		log.Fatal(err)
 	}
 
-	w, err := wish.NewServer(
-		wish.WithAddress(address),
-		wish.WithPublicKeyAuth(authHandler(logger, service)),
-		wish.WithMiddleware(
-			bubbletea.Middleware(teaHandler(logger, service)),
-			activeterm.Middleware(),
-		),
-	)
-	if err != nil {
-		log.Fatal(err)
+	server := ssh.Server{
+		Addr:             address,
+		PublicKeyHandler: authHandler(logger, service),
+		Handler:          handler(logger, service),
 	}
 
+	// TODO: Add flag for this
+	server.SetOption(ssh.HostKeyFile("./id_ed25519"))
+
 	logger.Info("Starting server", zap.String("address", address))
-	log.Fatal(w.ListenAndServe())
+
+	err = server.ListenAndServe()
+	if err != nil {
+		logger.Error("Failed to run server", zap.Error(err))
+	}
 }
 
 func authHandler(logger *zap.Logger, service forum.Service) ssh.PublicKeyHandler {
@@ -78,19 +75,33 @@ func authHandler(logger *zap.Logger, service forum.Service) ssh.PublicKeyHandler
 	}
 }
 
-func teaHandler(logger *zap.Logger, service forum.Service) bubbletea.Handler {
-	return func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
-		user := s.User()
+func handler(logger *zap.Logger, service forum.Service) ssh.Handler {
+	return func(s ssh.Session) {
+		username := s.User()
 
-		if user == signupUsername {
-			m := signup.New(s, service, logger)
-			return m, []tea.ProgramOption{}
+		logger := logger.With(
+			zap.String("username", username),
+			zap.String("remote_addr", s.RemoteAddr().String()),
+		)
+		defer logger.Info("Disconnected")
+
+		logger.Info("Got login")
+
+		if username == signupUsername {
+			err := signup.Handler(logger, s, service)
+			if err != nil {
+				fmt.Fprintf(s, "Error: %s\n", err)
+				s.Exit(1)
+				return
+			}
+
+			fmt.Fprintln(s, "User created successfully")
+			s.Exit(0)
+			return
 		}
 
-		m := mainModel{
-			user: user,
-		}
-
-		return m, []tea.ProgramOption{}
+		fmt.Fprintln(s, "Error: unimplemented function")
+		s.Exit(1)
+		return
 	}
 }
