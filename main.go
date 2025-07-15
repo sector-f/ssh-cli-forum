@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/wish/activeterm"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/shell"
 	"github.com/sector-f/ssh-cli-forum/internal/signup"
 	"github.com/sector-f/ssh-cli-forum/internal/table"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
@@ -39,6 +40,7 @@ func main() {
 		wish.WithPublicKeyAuth(authHandler(logger, service)),
 		wish.WithMiddleware(
 			bubbletea.Middleware(tableHandler(logger, service)),
+			shell.Middleware(logger),
 			signupMiddleware(logger, service),
 			loggingMiddleware(logger),
 			activeterm.Middleware(),
