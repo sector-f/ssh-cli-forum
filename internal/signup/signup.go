@@ -44,6 +44,8 @@ func Handler(logger *zap.Logger, s ssh.Session, service forum.Service) error {
 		}
 	}
 
+	logger = logger.With(zap.String("invite_code", inviteCode))
+
 	rl.SetPrompt("Enter desired username: ")
 	for {
 		line, err := rl.Readline()
@@ -58,5 +60,12 @@ func Handler(logger *zap.Logger, s ssh.Session, service forum.Service) error {
 		}
 	}
 
-	return service.CreateUser(newUsername, s.PublicKey(), inviteCode)
+	logger = logger.With(zap.String("username", newUsername))
+
+	err = service.CreateUser(newUsername, s.PublicKey(), inviteCode)
+	if err != nil {
+		logger.Warn("Failed to create user", zap.Error(err))
+	}
+
+	return err
 }
