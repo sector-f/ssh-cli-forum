@@ -10,7 +10,6 @@ require (
 	github.com/charmbracelet/wish v1.4.7
 	github.com/chzyer/readline v1.5.1
 	github.com/evertras/bubble-table v0.17.2
-	github.com/gliderlabs/ssh v0.3.8
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
