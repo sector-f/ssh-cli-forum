@@ -53,5 +53,5 @@ type ChatroomService interface {
 	// Chatroom
 	Register(id string, program *tea.Program)
 	Unregister(id string)
-	SendMessage(user string, text string)
+	SendMessage(msg Message)
 }

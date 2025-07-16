@@ -6,12 +6,11 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *Service) SendMessage(user string, text string) {
+func (s *Service) SendMessage(msg forum.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, program := range s.programs {
-		msg := forum.Message{Username: user, Text: text}
 		program.Send(msg)
 	}
 }

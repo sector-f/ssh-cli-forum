@@ -3,6 +3,7 @@ package teashell
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -77,6 +78,12 @@ func (m model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+func (m model) formattedBuffer() string {
+	lines := strings.Join(m.lines, "\n")
+	text := wordwrap.String(lines, m.width)
+	return text
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
@@ -85,23 +92,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case forum.Message:
-		line := strings.TrimSpace(fmt.Sprintf("%s: %s", msg.Username, msg.Text))
+		line := strings.TrimSpace(fmt.Sprintf("%s %s: %s", msg.Timestamp.Format(time.TimeOnly), msg.Username, msg.Text))
 		m.lines = append(m.lines, line)
 
-		lines := strings.Join(m.lines, "\n")
-		text := wordwrap.String(lines, m.width)
-		m.viewport.SetContent(text)
+		m.viewport.SetContent(m.formattedBuffer())
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			return m, tea.Quit
 		case "enter":
-			text := m.input.Value()
+			chatMsg := forum.Message{
+				Timestamp: time.Now(),
+				Username:  m.user,
+				Text:      strings.TrimSpace(m.input.Value()),
+			}
 
 			// Send on separate goroutine so we don't deadlock:
 			// SendMessage blocks trying to send to this session,
 			// but this session is blocked waiting for SendMessage to return.
-			go m.chatroom.SendMessage(m.user, strings.TrimSpace(text))
+			go m.chatroom.SendMessage(chatMsg)
 			m.input.Reset()
 		}
 	case tea.WindowSizeMsg:
@@ -119,9 +128,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Height = msg.Height - verticalMarginHeight
 		}
 
-		lines := strings.Join(m.lines, "\n")
-		text := wordwrap.String(lines, m.width)
-		m.viewport.SetContent(text)
+		m.viewport.SetContent(m.formattedBuffer())
 	}
 
 	// Handle keyboard and mouse events in the viewport
