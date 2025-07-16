@@ -34,7 +34,7 @@ func (s *Server) Connect(id string) chan forum.Message {
 	return ch
 }
 
-func (s *Server) Disonnect(id string) {
+func (s *Server) Disconnect(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

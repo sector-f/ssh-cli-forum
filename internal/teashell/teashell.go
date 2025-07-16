@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/muesli/reflow/wordwrap"
 	"github.com/sector-f/ssh-cli-forum/forum"
-	"github.com/sector-f/ssh-cli-forum/internal/chatroom"
 )
 
 var _ tea.Model = model{}
@@ -34,20 +33,19 @@ var (
 
 type model struct {
 	user string
-	chat *chatroom.Server
+	chat forum.ChatroomService
 	msgs []forum.Message
-	//lines    []string
-	buffer string
-	msgCh  chan forum.Message
 
 	viewport   viewport.Model
 	input      textinput.Model
+	buffer     string
 	headerText string
 	width      int
-	ready      bool
+
+	ready bool
 }
 
-func NewProgram(sess ssh.Session, chat *chatroom.Server, username string) *tea.Program {
+func NewProgram(sess ssh.Session, chat forum.ChatroomService) *tea.Program {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Focus()
@@ -56,10 +54,8 @@ func NewProgram(sess ssh.Session, chat *chatroom.Server, username string) *tea.P
 	msgCh := chat.Connect(id)
 
 	m := model{
-		user:  username,
-		chat:  chat,
-		msgCh: msgCh,
-		// buffer:     "Welcome to this stupid chatroom that probably won't work!\n\n",
+		user:       sess.User(),
+		chat:       chat,
 		input:      ti,
 		headerText: "SSH Chatroom",
 	}
@@ -75,15 +71,15 @@ func NewProgram(sess ssh.Session, chat *chatroom.Server, username string) *tea.P
 
 	go func() {
 		program.Wait()
-		chat.Disonnect(id)
+		chat.Disconnect(id)
 	}()
 
 	return program
 }
 
-func Handler(chat *chatroom.Server) bubbletea.ProgramHandler {
+func Handler(chat forum.ChatroomService) bubbletea.ProgramHandler {
 	return func(s ssh.Session) *tea.Program {
-		return NewProgram(s, chat, s.User())
+		return NewProgram(s, chat)
 	}
 }
 

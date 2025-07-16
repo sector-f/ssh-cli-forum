@@ -48,15 +48,8 @@ type BoardService interface {
 	ListComments(threadID int) ([]Comment, error)
 }
 
-/*
 type ChatroomService interface {
-	Register(session ssh.Session)
-	Connect(session ssh.Session) chan Message
-	Unregister(id string)
-	SendMessage(msg Message)
-}
-*/
-
-type ChatroomClient interface {
+	Connect(id string) chan Message
+	Disconnect(id string)
 	SendMsg(msg Message)
 }
