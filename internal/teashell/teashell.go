@@ -17,8 +17,7 @@ var _ tea.Model = model{}
 
 var (
 	titleStyle = func() lipgloss.Style {
-		b := lipgloss.RoundedBorder()
-		b.Right = "├"
+		b := lipgloss.NormalBorder()
 		return lipgloss.NewStyle().BorderStyle(b).Padding(0, 1)
 	}()
 
@@ -95,7 +94,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = msg.Height - verticalMarginHeight
-
 		}
 
 		text := wordwrap.String(m.buffer, msg.Width)
@@ -128,6 +126,9 @@ func (m model) View() string {
 
 func (m model) headerView() string {
 	title := titleStyle.Render(m.headerText)
-	line := strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(title)))
-	return lipgloss.JoinHorizontal(lipgloss.Center, title, line)
+	line := strings.Repeat(
+		"─",
+		max(0, (m.viewport.Width-lipgloss.Width(title))/2),
+	)
+	return lipgloss.JoinHorizontal(lipgloss.Center, line, title, line)
 }
