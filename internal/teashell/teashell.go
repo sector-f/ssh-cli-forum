@@ -30,10 +30,10 @@ var (
 )
 
 type model struct {
-	user    string
-	service forum.Service
-	lines   []string
-	buffer  string
+	user     string
+	chatroom forum.ChatroomService
+	lines    []string
+	buffer   string
 
 	viewport   viewport.Model
 	input      textinput.Model
@@ -42,14 +42,14 @@ type model struct {
 	ready      bool
 }
 
-func New(s forum.Service, username string) tea.Model {
+func New(s forum.ChatroomService, username string) tea.Model {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Focus()
 
 	m := model{
 		user:       username,
-		service:    s,
+		chatroom:   s,
 		buffer:     "Welcome to this stupid chatroom that probably won't work!\n\n",
 		input:      ti,
 		headerText: "SSH Bulletin Board",
@@ -58,7 +58,7 @@ func New(s forum.Service, username string) tea.Model {
 	return m
 }
 
-func Handler(service forum.Service) bubbletea.ProgramHandler {
+func Handler(service forum.ChatroomService) bubbletea.ProgramHandler {
 	return func(s ssh.Session) *tea.Program {
 		id := s.Context().SessionID()
 		program := tea.NewProgram(New(service, s.User()), tea.WithAltScreen(), tea.WithInput(s), tea.WithOutput(s))
@@ -101,7 +101,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Send on separate goroutine so we don't deadlock:
 			// SendMessage blocks trying to send to this session,
 			// but this session is blocked waiting for SendMessage to return.
-			go m.service.SendMessage(m.user, strings.TrimSpace(text))
+			go m.chatroom.SendMessage(m.user, strings.TrimSpace(text))
 			m.input.Reset()
 		}
 	case tea.WindowSizeMsg:

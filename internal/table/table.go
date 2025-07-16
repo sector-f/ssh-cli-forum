@@ -10,7 +10,7 @@ import (
 var _ tea.Model = model{}
 
 type model struct {
-	service forum.Service
+	service forum.UserService
 
 	usersTable table.Model
 
@@ -18,7 +18,7 @@ type model struct {
 	height int
 }
 
-func New(logger *zap.Logger, service forum.Service) tea.Model {
+func New(logger *zap.Logger, service forum.UserService) tea.Model {
 	users, err := service.ListUsers()
 	if err != nil {
 		logger.Error("Failed to look up users", zap.Error(err))

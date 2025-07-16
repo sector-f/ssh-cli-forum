@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func Handler(logger *zap.Logger, s ssh.Session, service forum.Service) error {
+func Handler(logger *zap.Logger, s ssh.Session, service forum.UserService) error {
 	rlConfig := &readline.Config{
 		HistoryFile:  "",
 		HistoryLimit: 0,

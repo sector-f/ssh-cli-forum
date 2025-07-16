@@ -58,7 +58,7 @@ func main() {
 	}
 }
 
-func authHandler(logger *zap.Logger, service forum.Service) ssh.PublicKeyHandler {
+func authHandler(logger *zap.Logger, service forum.UserService) ssh.PublicKeyHandler {
 	return func(ctx ssh.Context, key ssh.PublicKey) bool {
 		username := ctx.User()
 
@@ -80,7 +80,7 @@ func authHandler(logger *zap.Logger, service forum.Service) ssh.PublicKeyHandler
 	}
 }
 
-func tableHandler(logger *zap.Logger, service forum.Service) bubbletea.Handler {
+func tableHandler(logger *zap.Logger, service forum.UserService) bubbletea.Handler {
 	return func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 		m := table.New(logger, service)
 		return m, []tea.ProgramOption{tea.WithAltScreen()}
@@ -112,7 +112,7 @@ func loggingMiddleware(logger *zap.Logger) wish.Middleware {
 	}
 }
 
-func signupMiddleware(logger *zap.Logger, service forum.Service) func(next ssh.Handler) ssh.Handler {
+func signupMiddleware(logger *zap.Logger, service forum.UserService) func(next ssh.Handler) ssh.Handler {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(s ssh.Session) {
 			if s.User() != forum.SignupUsername {

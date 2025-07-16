@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/sector-f/ssh-cli-forum/forum"
 	"go.uber.org/zap"
 )
 
@@ -56,7 +55,7 @@ type Comment struct {
 }
 
 // Open opens a connection and creates tables if they don't exist.
-func Open(logger *zap.Logger, path string) (forum.Service, error) {
+func Open(logger *zap.Logger, path string) (*Service, error) {
 	db, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return nil, err

@@ -19,7 +19,7 @@ var (
 	ErrUnknown         = errors.New("unknown error")
 )
 
-type Service interface {
+type UserService interface {
 	// Invites
 	CreateInvite(code string, expiresAt time.Time, isAdmin bool) error
 	ListInvites() ([]Invite, error)
@@ -31,7 +31,9 @@ type Service interface {
 	GetUserByUsername(username string) (User, error)
 	AuthenticateUser(username string, givenKey ssh.PublicKey) bool
 	ListUsers() ([]User, error)
+}
 
+type BoardService interface {
 	// Boards
 	CreateBoard(name string) error
 	ListBoards() ([]BoardListing, error)
@@ -45,7 +47,9 @@ type Service interface {
 	// Comments
 	CreateComment(threadID int, authorID int, body string) error
 	ListComments(threadID int) ([]Comment, error)
+}
 
+type ChatroomService interface {
 	// Chatroom
 	Register(id string, program *tea.Program)
 	Unregister(id string)
