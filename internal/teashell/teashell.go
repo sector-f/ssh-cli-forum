@@ -33,8 +33,9 @@ var (
 type model struct {
 	user     string
 	chatroom forum.ChatroomService
-	lines    []string
-	buffer   string
+	msgs     []forum.Message
+	//lines    []string
+	buffer string
 
 	viewport   viewport.Model
 	input      textinput.Model
@@ -79,8 +80,14 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) formattedBuffer() string {
-	lines := strings.Join(m.lines, "\n")
-	text := wordwrap.String(lines, m.width)
+	lines := make([]string, 0, len(m.msgs))
+	for _, msg := range m.msgs {
+		line := strings.TrimSpace(fmt.Sprintf("%s %s: %s", msg.Timestamp.Format(time.TimeOnly), msg.Username, msg.Text))
+		lines = append(lines, line)
+	}
+
+	joined := strings.Join(lines, "\n")
+	text := wordwrap.String(joined, m.width)
 	return text
 }
 
@@ -92,9 +99,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case forum.Message:
-		line := strings.TrimSpace(fmt.Sprintf("%s %s: %s", msg.Timestamp.Format(time.TimeOnly), msg.Username, msg.Text))
-		m.lines = append(m.lines, line)
-
+		m.msgs = append(m.msgs, msg)
 		m.viewport.SetContent(m.formattedBuffer())
 	case tea.KeyMsg:
 		switch msg.String() {
