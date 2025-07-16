@@ -5,17 +5,15 @@ import (
 	"sync"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
 type Service struct {
-	logger   *zap.Logger
-	db       *sql.DB
-	programs map[string]*tea.Program
-	mu       sync.Mutex
+	logger *zap.Logger
+	db     *sql.DB
+	mu     sync.Mutex
 }
 
 type Invite struct {
@@ -61,7 +59,7 @@ func Open(logger *zap.Logger, path string) (*Service, error) {
 		return nil, err
 	}
 
-	s := &Service{logger: logger, db: db, programs: make(map[string]*tea.Program)}
+	s := &Service{logger: logger, db: db}
 
 	if err := s.createTables(); err != nil {
 		return nil, err

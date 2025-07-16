@@ -4,7 +4,6 @@ import (
 	"errors"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 )
 
@@ -49,9 +48,15 @@ type BoardService interface {
 	ListComments(threadID int) ([]Comment, error)
 }
 
+/*
 type ChatroomService interface {
-	// Chatroom
-	Register(id string, program *tea.Program)
+	Register(session ssh.Session)
+	Connect(session ssh.Session) chan Message
 	Unregister(id string)
 	SendMessage(msg Message)
+}
+*/
+
+type ChatroomClient interface {
+	SendMsg(msg Message)
 }

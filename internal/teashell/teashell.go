@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/muesli/reflow/wordwrap"
 	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/chatroom"
 )
 
 var _ tea.Model = model{}
@@ -32,11 +33,12 @@ var (
 )
 
 type model struct {
-	user     string
-	chatroom forum.ChatroomService
-	msgs     []forum.Message
+	user string
+	chat *chatroom.Server
+	msgs []forum.Message
 	//lines    []string
 	buffer string
+	msgCh  chan forum.Message
 
 	viewport   viewport.Model
 	input      textinput.Model
@@ -45,34 +47,43 @@ type model struct {
 	ready      bool
 }
 
-func New(s forum.ChatroomService, username string) tea.Model {
+func NewProgram(sess ssh.Session, chat *chatroom.Server, username string) *tea.Program {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Focus()
 
+	id := sess.Context().SessionID()
+	msgCh := chat.Connect(id)
+
 	m := model{
-		user:     username,
-		chatroom: s,
+		user:  username,
+		chat:  chat,
+		msgCh: msgCh,
 		// buffer:     "Welcome to this stupid chatroom that probably won't work!\n\n",
 		input:      ti,
 		headerText: "SSH Chatroom",
 	}
 
-	return m
+	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
+
+	go func() {
+		for {
+			msg := <-msgCh
+			program.Send(msg)
+		}
+	}()
+
+	go func() {
+		program.Wait()
+		chat.Disonnect(id)
+	}()
+
+	return program
 }
 
-func Handler(service forum.ChatroomService) bubbletea.ProgramHandler {
+func Handler(chat *chatroom.Server) bubbletea.ProgramHandler {
 	return func(s ssh.Session) *tea.Program {
-		id := s.Context().SessionID()
-		program := tea.NewProgram(New(service, s.User()), tea.WithAltScreen(), tea.WithInput(s), tea.WithOutput(s))
-
-		go func() {
-			program.Wait()
-			service.Unregister(id)
-		}()
-
-		service.Register(id, program)
-		return program
+		return NewProgram(s, chat, s.User())
 	}
 }
 
@@ -128,9 +139,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Send on separate goroutine so we don't deadlock:
-			// SendMessage blocks trying to send to this session,
+			// SendMsg blocks trying to send to this session,
 			// but this session is blocked waiting for SendMessage to return.
-			go m.chatroom.SendMessage(chatMsg)
+			go m.chat.SendMsg(chatMsg)
 			m.input.Reset()
 		}
 	case tea.WindowSizeMsg:

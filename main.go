@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/muesli/termenv"
 	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/chatroom"
 	"github.com/sector-f/ssh-cli-forum/internal/signup"
 	"github.com/sector-f/ssh-cli-forum/internal/table"
 	"github.com/sector-f/ssh-cli-forum/internal/teashell"
@@ -36,11 +37,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	chat := chatroom.NewServer(logger)
+
 	server, err := wish.NewServer(
 		wish.WithAddress(address),
 		wish.WithPublicKeyAuth(authHandler(logger, service)),
 		wish.WithMiddleware(
-			bubbletea.MiddlewareWithProgramHandler(teashell.Handler(service), termenv.Ascii),
+			bubbletea.MiddlewareWithProgramHandler(teashell.Handler(chat), termenv.Ascii),
 			signupMiddleware(logger, service),
 			loggingMiddleware(logger),
 			activeterm.Middleware(),
