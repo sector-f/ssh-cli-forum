@@ -2,17 +2,21 @@ package sqlite
 
 import (
 	"database/sql"
+	"sync"
 	"time"
 
-	"github.com/gliderlabs/ssh"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/ssh"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"go.uber.org/zap"
 )
 
 type Service struct {
-	logger *zap.Logger
-	db     *sql.DB
+	logger   *zap.Logger
+	db       *sql.DB
+	programs map[string]*tea.Program
+	mu       sync.Mutex
 }
 
 type Invite struct {
@@ -58,7 +62,7 @@ func Open(logger *zap.Logger, path string) (forum.Service, error) {
 		return nil, err
 	}
 
-	s := &Service{logger: logger, db: db}
+	s := &Service{logger: logger, db: db, programs: make(map[string]*tea.Program)}
 
 	if err := s.createTables(); err != nil {
 		return nil, err

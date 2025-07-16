@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/muesli/reflow/wordwrap"
+	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
 var _ tea.Model = model{}
@@ -29,7 +30,10 @@ var (
 )
 
 type model struct {
-	buffer string
+	user    string
+	service forum.Service
+	lines   []string
+	buffer  string
 
 	viewport   viewport.Model
 	input      textinput.Model
@@ -38,13 +42,15 @@ type model struct {
 	ready      bool
 }
 
-func New() tea.Model {
+func New(s forum.Service, username string) tea.Model {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Focus()
 
 	m := model{
-		buffer:     "Placeholder buffer text\n",
+		user:       username,
+		service:    s,
+		buffer:     "Welcome to this stupid chatroom that probably won't work!\n\n",
 		input:      ti,
 		headerText: "SSH Bulletin Board",
 	}
@@ -52,10 +58,18 @@ func New() tea.Model {
 	return m
 }
 
-func Handler() bubbletea.Handler {
-	return func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
-		m := New()
-		return m, []tea.ProgramOption{tea.WithAltScreen()}
+func Handler(service forum.Service) bubbletea.ProgramHandler {
+	return func(s ssh.Session) *tea.Program {
+		id := s.Context().SessionID()
+		program := tea.NewProgram(New(service, s.User()), tea.WithAltScreen(), tea.WithInput(s), tea.WithOutput(s))
+
+		go func() {
+			program.Wait()
+			service.Unregister(id)
+		}()
+
+		service.Register(id, program)
+		return program
 	}
 }
 
@@ -70,16 +84,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	)
 
 	switch msg := msg.(type) {
+	case forum.Message:
+		line := strings.TrimSpace(fmt.Sprintf("%s: %s", msg.Username, msg.Text))
+		m.lines = append(m.lines, line)
+		lines := strings.Join(m.lines, "\n")
+
+		text := wordwrap.String(lines, m.width)
+		m.viewport.SetContent(text)
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			return m, tea.Quit
 		case "enter":
-			m.buffer += m.input.Value() + "\n"
-			m.input.Reset()
+			text := m.input.Value()
 
-			text := wordwrap.String(m.buffer, m.width)
-			m.viewport.SetContent(text)
+			// Send on separate goroutine so we don't deadlock:
+			// SendMessage blocks trying to send to this session,
+			// but this session is blocked waiting for SendMessage to return.
+			go m.service.SendMessage(m.user, strings.TrimSpace(text))
+			m.input.Reset()
 		}
 	case tea.WindowSizeMsg:
 		headerHeight := lipgloss.Height(m.headerView())

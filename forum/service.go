@@ -4,7 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gliderlabs/ssh"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/ssh"
 )
 
 var (
@@ -44,4 +45,9 @@ type Service interface {
 	// Comments
 	CreateComment(threadID int, authorID int, body string) error
 	ListComments(threadID int) ([]Comment, error)
+
+	// Chatroom
+	Register(id string, program *tea.Program)
+	Unregister(id string)
+	SendMessage(user string, text string)
 }
