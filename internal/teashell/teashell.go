@@ -87,8 +87,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case forum.Message:
 		line := strings.TrimSpace(fmt.Sprintf("%s: %s", msg.Username, msg.Text))
 		m.lines = append(m.lines, line)
-		lines := strings.Join(m.lines, "\n")
 
+		lines := strings.Join(m.lines, "\n")
 		text := wordwrap.String(lines, m.width)
 		m.viewport.SetContent(text)
 	case tea.KeyMsg:
@@ -119,7 +119,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Height = msg.Height - verticalMarginHeight
 		}
 
-		text := wordwrap.String(m.buffer, msg.Width)
+		lines := strings.Join(m.lines, "\n")
+		text := wordwrap.String(lines, m.width)
 		m.viewport.SetContent(text)
 	}
 
