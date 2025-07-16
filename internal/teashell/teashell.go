@@ -1,6 +1,7 @@
 package teashell
 
 import (
+	"bufio"
 	"fmt"
 	"strings"
 	"time"
@@ -50,11 +51,11 @@ func New(s forum.ChatroomService, username string) tea.Model {
 	ti.Focus()
 
 	m := model{
-		user:       username,
-		chatroom:   s,
-		buffer:     "Welcome to this stupid chatroom that probably won't work!\n\n",
+		user:     username,
+		chatroom: s,
+		// buffer:     "Welcome to this stupid chatroom that probably won't work!\n\n",
 		input:      ti,
-		headerText: "SSH Bulletin Board",
+		headerText: "SSH Chatroom",
 	}
 
 	return m
@@ -80,15 +81,29 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) formattedBuffer() string {
-	lines := make([]string, 0, len(m.msgs))
+	var sb strings.Builder
+
+	// '12:34:56 '
+	prefixWidth := 9
+
 	for _, msg := range m.msgs {
-		line := strings.TrimSpace(fmt.Sprintf("%s %s: %s", msg.Timestamp.Format(time.TimeOnly), msg.Username, msg.Text))
-		lines = append(lines, line)
+		timeStamp := msg.Timestamp.Format(time.TimeOnly)
+		wrappedMsg := wordwrap.String(fmt.Sprintf("%s: %s", msg.Username, msg.Text), m.width-prefixWidth)
+
+		sb.WriteString(timeStamp + " ")
+
+		var lineNum int
+		scanner := bufio.NewScanner(strings.NewReader(wrappedMsg))
+		for scanner.Scan() {
+			if lineNum > 0 {
+				sb.WriteString(strings.Repeat(" ", prefixWidth))
+			}
+			sb.WriteString(scanner.Text() + "\n")
+			lineNum++
+		}
 	}
 
-	joined := strings.Join(lines, "\n")
-	text := wordwrap.String(joined, m.width)
-	return text
+	return sb.String()
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
