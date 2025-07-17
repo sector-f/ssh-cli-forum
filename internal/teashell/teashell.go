@@ -150,9 +150,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			command := strings.TrimSpace(m.input.Value())
 			switch m.screen {
 			case screenHome:
+				// TODO: is there a way to automate this?
 				switch command {
 				case "chat":
 					m.screen = screenChat
+				case "exit", "quit":
+					return m, tea.Quit
 				default:
 					// Display error message, somehow
 				}
