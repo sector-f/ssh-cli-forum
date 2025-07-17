@@ -51,7 +51,7 @@ func NewProgram(sess ssh.Session, chat forum.ChatroomService) *tea.Program {
 	ti.Focus()
 
 	id := sess.Context().SessionID()
-	msgCh := chat.Connect(id)
+	msgCh := chat.Connect(sess)
 
 	m := model{
 		user:       sess.User(),

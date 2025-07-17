@@ -49,7 +49,7 @@ type BoardService interface {
 }
 
 type ChatroomService interface {
-	Connect(id string) chan Message
+	Connect(session ssh.Session) chan Message
 	Disconnect(id string)
 	SendMsg(msg ChatMsg)
 }
