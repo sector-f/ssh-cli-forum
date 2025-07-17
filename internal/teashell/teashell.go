@@ -16,7 +16,7 @@ import (
 	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
-var _ tea.Model = (*model)(nil)
+var _ tea.Model = model{}
 
 var (
 	titleStyle = func() lipgloss.Style {
@@ -66,19 +66,22 @@ func NewProgram(sess ssh.Session, chat forum.ChatroomService) *tea.Program {
 
 	id := sess.Context().SessionID()
 
-	m := &model{
+	var program *tea.Program
+	callback := func(msg forum.Message) {
+		program.Send(msg)
+	}
+
+	m := model{
 		session:    sess,
 		screen:     screenHome,
 		user:       sess.User(),
 		chat:       chat,
 		input:      ti,
 		headerText: "SSH Chatroom",
+		callback:   callback,
 	}
 
-	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
-	m.callback = func(msg forum.Message) {
-		program.Send(msg)
-	}
+	program = tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
 
 	go func() {
 		program.Wait()
@@ -94,7 +97,7 @@ func Handler(chat forum.ChatroomService) bubbletea.ProgramHandler {
 	}
 }
 
-func (m *model) Init() tea.Cmd {
+func (m model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
@@ -129,7 +132,7 @@ func (m model) chatBuffer() string {
 	return sb.String()
 }
 
-func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
@@ -219,7 +222,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *model) View() string {
+func (m model) View() string {
 	if !m.ready {
 		return "\n  Initializing..."
 	}
