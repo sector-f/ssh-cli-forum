@@ -176,10 +176,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					Text:      command,
 				}
 
-				// Send on separate goroutine so we don't deadlock:
-				// SendMsg blocks trying to send to this session,
-				// but this session is blocked waiting for SendMsg to return.
-				go m.chat.SendMsg(chatMsg)
+				cmds = append(cmds, func() tea.Msg { m.chat.SendMsg(chatMsg); return nil })
 				m.input.Reset()
 			}
 		}
