@@ -64,7 +64,11 @@ func (s *Server) Disconnect(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	username := s.sessions[id].User()
+	session, ok := s.sessions[id]
+	if !ok {
+		return
+	}
+	username := session.User()
 
 	s.logger.Info("Client disconnected", zap.String("session_id", id))
 	delete(s.chans, id)
