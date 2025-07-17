@@ -31,10 +31,20 @@ var (
 	}()
 )
 
+type screen string
+
+var (
+	// Home screen
+	screenHome screen = "home"
+	// Chatroom screen
+	screenChat screen = "chatroom"
+)
+
 type model struct {
-	user string
-	chat forum.ChatroomService
-	msgs []forum.Message
+	screen screen
+	user   string
+	chat   forum.ChatroomService
+	msgs   []forum.Message
 
 	viewport   viewport.Model
 	input      textinput.Model
@@ -54,6 +64,7 @@ func NewProgram(sess ssh.Session, chat forum.ChatroomService) *tea.Program {
 	msgCh := chat.Connect(sess)
 
 	m := model{
+		screen:     screenHome,
 		user:       sess.User(),
 		chat:       chat,
 		input:      ti,
@@ -87,7 +98,11 @@ func (m model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m model) formattedBuffer() string {
+func (m model) homeBuffer() string {
+	return "This is some placeholder text\n"
+}
+
+func (m model) chatBuffer() string {
 	var sb strings.Builder
 
 	// '12:34:56 '
@@ -122,23 +137,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case forum.Message:
 		m.msgs = append(m.msgs, msg)
-		m.viewport.SetContent(m.formattedBuffer())
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
-			return m, tea.Quit
-		case "enter":
-			chatMsg := forum.ChatMsg{
-				Timestamp: time.Now(),
-				Username:  m.user,
-				Text:      strings.TrimSpace(m.input.Value()),
+			switch m.screen {
+			case screenChat:
+				m.screen = screenHome
+			default:
+				return m, tea.Quit
 			}
+		case "enter":
+			command := strings.TrimSpace(m.input.Value())
+			switch m.screen {
+			case screenHome:
+				switch command {
+				case "chat":
+					m.screen = screenChat
+				default:
+					// Display error message, somehow
+				}
+				m.input.Reset()
+			case screenChat:
+				chatMsg := forum.ChatMsg{
+					Timestamp: time.Now(),
+					Username:  m.user,
+					Text:      command,
+				}
 
-			// Send on separate goroutine so we don't deadlock:
-			// SendMsg blocks trying to send to this session,
-			// but this session is blocked waiting for SendMessage to return.
-			go m.chat.SendMsg(chatMsg)
-			m.input.Reset()
+				// Send on separate goroutine so we don't deadlock:
+				// SendMsg blocks trying to send to this session,
+				// but this session is blocked waiting for SendMsg to return.
+				go m.chat.SendMsg(chatMsg)
+				m.input.Reset()
+			}
 		}
 	case tea.WindowSizeMsg:
 		headerHeight := lipgloss.Height(m.headerView())
@@ -154,8 +185,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = msg.Height - verticalMarginHeight
 		}
+	}
 
-		m.viewport.SetContent(m.formattedBuffer())
+	switch m.screen {
+	case screenHome:
+		m.viewport.SetContent(m.homeBuffer())
+	case screenChat:
+		m.viewport.SetContent(m.chatBuffer())
 	}
 
 	// Handle keyboard and mouse events in the viewport
