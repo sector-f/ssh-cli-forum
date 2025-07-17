@@ -99,7 +99,8 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) homeBuffer() string {
-	return "This is some placeholder text\n"
+	s := fmt.Sprintf("Available commands:\n\n\t* chat - use the real-time chat feature\n\t* exit - exit the program\n")
+	return s
 }
 
 func (m model) chatBuffer() string {
@@ -139,7 +140,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.msgs = append(m.msgs, msg)
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "esc":
+		case "esc":
+			switch m.screen {
+			case screenChat:
+				m.screen = screenHome
+			default:
+				// Do nothing
+			}
+		case "ctrl+c":
 			switch m.screen {
 			case screenChat:
 				m.screen = screenHome
