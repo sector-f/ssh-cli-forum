@@ -51,5 +51,5 @@ type BoardService interface {
 type ChatroomService interface {
 	Connect(id string) chan Message
 	Disconnect(id string)
-	SendMsg(msg Message)
+	SendMsg(msg ChatMsg)
 }

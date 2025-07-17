@@ -94,8 +94,8 @@ func (m model) formattedBuffer() string {
 	prefixWidth := 9
 
 	for _, msg := range m.msgs {
-		timeStamp := msg.Timestamp.Format(time.TimeOnly)
-		wrappedMsg := wordwrap.String(fmt.Sprintf("%s: %s", msg.Username, msg.Text), m.width-prefixWidth)
+		timeStamp := msg.Time().Format(time.TimeOnly)
+		wrappedMsg := wordwrap.String(msg.Body(), m.width-prefixWidth)
 
 		sb.WriteString(timeStamp + " ")
 
@@ -128,7 +128,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "esc":
 			return m, tea.Quit
 		case "enter":
-			chatMsg := forum.Message{
+			chatMsg := forum.ChatMsg{
 				Timestamp: time.Now(),
 				Username:  m.user,
 				Text:      strings.TrimSpace(m.input.Value()),
