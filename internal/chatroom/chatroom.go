@@ -11,8 +11,8 @@ import (
 )
 
 type Server struct {
-	sessions map[string]ssh.Session
-	chans    map[string]chan forum.Message
+	sessions  map[string]ssh.Session
+	callbacks map[string]func(forum.Message)
 
 	limit      int
 	scrollback []forum.Message
@@ -26,7 +26,7 @@ func NewServer(logger *zap.Logger) *Server {
 
 	s := &Server{
 		sessions:   make(map[string]ssh.Session),
-		chans:      make(map[string]chan forum.Message),
+		callbacks:  make(map[string]func(forum.Message)),
 		limit:      sbLimit,
 		scrollback: make([]forum.Message, 0, sbLimit),
 		logger:     logger,
@@ -35,7 +35,7 @@ func NewServer(logger *zap.Logger) *Server {
 	return s
 }
 
-func (s *Server) Connect(session ssh.Session) ([]forum.Message, chan forum.Message) {
+func (s *Server) Connect(session ssh.Session, callback func(forum.Message)) []forum.Message {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -48,16 +48,15 @@ func (s *Server) Connect(session ssh.Session) ([]forum.Message, chan forum.Messa
 		Text:      fmt.Sprintf("%s has joined", session.User()),
 	}
 
-	for _, ch := range s.chans {
-		ch <- msg
+	for _, f := range s.callbacks {
+		f(msg)
 	}
 	s.storeMsg(msg)
 
-	ch := make(chan forum.Message)
-	s.chans[id] = ch
+	s.callbacks[id] = callback
 	s.sessions[id] = session
 	scrollback := s.scrollback
-	return scrollback, ch
+	return scrollback
 }
 
 func (s *Server) Disconnect(id string) {
@@ -71,7 +70,7 @@ func (s *Server) Disconnect(id string) {
 	username := session.User()
 
 	s.logger.Info("Client disconnected", zap.String("session_id", id))
-	delete(s.chans, id)
+	delete(s.callbacks, id)
 	delete(s.sessions, id)
 
 	msg := forum.SystemMsg{
@@ -79,8 +78,8 @@ func (s *Server) Disconnect(id string) {
 		Text:      fmt.Sprintf("%s has quit", username),
 	}
 
-	for _, ch := range s.chans {
-		ch <- msg
+	for _, f := range s.callbacks {
+		f(msg)
 	}
 
 	s.storeMsg(msg)
@@ -90,10 +89,10 @@ func (s *Server) SendMsg(msg forum.ChatMsg) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.logger.Debug("Chat msg sent", zap.String("msg", msg.Body()))
-	for _, ch := range s.chans {
-		ch <- msg
+	for _, f := range s.callbacks {
+		f(msg)
 	}
+	s.logger.Debug("Chat msg sent", zap.String("msg", msg.Body()))
 	s.storeMsg(msg)
 }
 

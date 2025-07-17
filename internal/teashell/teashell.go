@@ -16,7 +16,7 @@ import (
 	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
-var _ tea.Model = model{}
+var _ tea.Model = (*model)(nil)
 
 var (
 	titleStyle = func() lipgloss.Style {
@@ -41,10 +41,14 @@ var (
 )
 
 type model struct {
-	screen screen
-	user   string
-	chat   forum.ChatroomService
-	msgs   []forum.Message
+	session ssh.Session
+	screen  screen
+	user    string
+
+	chat      forum.ChatroomService
+	msgs      []forum.Message
+	callback  func(forum.Message)
+	connected bool
 
 	viewport   viewport.Model
 	input      textinput.Model
@@ -61,25 +65,20 @@ func NewProgram(sess ssh.Session, chat forum.ChatroomService) *tea.Program {
 	ti.Focus()
 
 	id := sess.Context().SessionID()
-	scrollback, msgCh := chat.Connect(sess)
 
-	m := model{
+	m := &model{
+		session:    sess,
 		screen:     screenHome,
 		user:       sess.User(),
 		chat:       chat,
-		msgs:       scrollback,
 		input:      ti,
 		headerText: "SSH Chatroom",
 	}
 
 	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
-
-	go func() {
-		for {
-			msg := <-msgCh
-			program.Send(msg)
-		}
-	}()
+	m.callback = func(msg forum.Message) {
+		program.Send(msg)
+	}
 
 	go func() {
 		program.Wait()
@@ -95,7 +94,7 @@ func Handler(chat forum.ChatroomService) bubbletea.ProgramHandler {
 	}
 }
 
-func (m model) Init() tea.Cmd {
+func (m *model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
@@ -130,7 +129,7 @@ func (m model) chatBuffer() string {
 	return sb.String()
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
@@ -162,6 +161,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// TODO: is there a way to automate this?
 				switch command {
 				case "chat":
+					if !m.connected {
+						msgs := m.chat.Connect(m.session, m.callback)
+						m.msgs = msgs
+						m.connected = true
+					}
+
 					m.screen = screenChat
 				case "exit", "quit":
 					return m, tea.Quit
@@ -214,7 +219,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m model) View() string {
+func (m *model) View() string {
 	if !m.ready {
 		return "\n  Initializing..."
 	}
