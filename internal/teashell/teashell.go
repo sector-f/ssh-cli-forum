@@ -61,12 +61,13 @@ func NewProgram(sess ssh.Session, chat forum.ChatroomService) *tea.Program {
 	ti.Focus()
 
 	id := sess.Context().SessionID()
-	msgCh := chat.Connect(sess)
+	scrollback, msgCh := chat.Connect(sess)
 
 	m := model{
 		screen:     screenHome,
 		user:       sess.User(),
 		chat:       chat,
+		msgs:       scrollback,
 		input:      ti,
 		headerText: "SSH Chatroom",
 	}

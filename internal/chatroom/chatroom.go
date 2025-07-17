@@ -13,22 +13,29 @@ import (
 type Server struct {
 	sessions map[string]ssh.Session
 	chans    map[string]chan forum.Message
-	logger   *zap.Logger
 
-	mu sync.Mutex
+	limit      int
+	scrollback []forum.Message
+
+	logger *zap.Logger
+	mu     sync.Mutex
 }
 
 func NewServer(logger *zap.Logger) *Server {
+	sbLimit := 100
+
 	s := &Server{
-		sessions: make(map[string]ssh.Session),
-		chans:    make(map[string]chan forum.Message),
-		logger:   logger,
+		sessions:   make(map[string]ssh.Session),
+		chans:      make(map[string]chan forum.Message),
+		limit:      sbLimit,
+		scrollback: make([]forum.Message, 0, sbLimit),
+		logger:     logger,
 	}
 
 	return s
 }
 
-func (s *Server) Connect(session ssh.Session) chan forum.Message {
+func (s *Server) Connect(session ssh.Session) ([]forum.Message, chan forum.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -36,18 +43,21 @@ func (s *Server) Connect(session ssh.Session) chan forum.Message {
 
 	s.logger.Info("Client connected", zap.String("session_id", id))
 
+	msg := forum.SystemMsg{
+		Timestamp: time.Now(),
+		Text:      fmt.Sprintf("%s has joined", session.User()),
+	}
+
 	for _, ch := range s.chans {
-		msg := forum.SystemMsg{
-			Timestamp: time.Now(),
-			Text:      fmt.Sprintf("%s has joined", session.User()),
-		}
 		ch <- msg
 	}
+	s.storeMsg(msg)
 
 	ch := make(chan forum.Message)
 	s.chans[id] = ch
 	s.sessions[id] = session
-	return ch
+	scrollback := s.scrollback
+	return scrollback, ch
 }
 
 func (s *Server) Disconnect(id string) {
@@ -60,13 +70,16 @@ func (s *Server) Disconnect(id string) {
 	delete(s.chans, id)
 	delete(s.sessions, id)
 
+	msg := forum.SystemMsg{
+		Timestamp: time.Now(),
+		Text:      fmt.Sprintf("%s has quit", username),
+	}
+
 	for _, ch := range s.chans {
-		msg := forum.SystemMsg{
-			Timestamp: time.Now(),
-			Text:      fmt.Sprintf("%s has quit", username),
-		}
 		ch <- msg
 	}
+
+	s.storeMsg(msg)
 }
 
 func (s *Server) SendMsg(msg forum.ChatMsg) {
@@ -77,4 +90,17 @@ func (s *Server) SendMsg(msg forum.ChatMsg) {
 	for _, ch := range s.chans {
 		ch <- msg
 	}
+	s.storeMsg(msg)
+}
+
+// Caller must hold mutex
+func (s *Server) storeMsg(msg forum.Message) {
+	if len(s.scrollback) < s.limit {
+		s.scrollback = append(s.scrollback, msg)
+		return
+	}
+
+	// Reallocating on every message once we hit the limit is pretty ugly.
+	// Replace with ring buffer?
+	s.scrollback = append(s.scrollback[1:], msg)
 }
