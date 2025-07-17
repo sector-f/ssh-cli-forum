@@ -175,6 +175,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		headerHeight := lipgloss.Height(m.headerView())
 		verticalMarginHeight := headerHeight + lipgloss.Height(m.input.View()) + 1
 		m.width = msg.Width
+		m.input.Width = msg.Width - lipgloss.Width(m.input.Prompt) - 1
 
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
