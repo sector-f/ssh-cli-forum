@@ -85,7 +85,7 @@ func NewProgram(sess ssh.Session, chat forum.ChatroomService) *tea.Program {
 
 	go func() {
 		program.Wait()
-		chat.Disconnect(id)
+		chat.DisconnectUser(id)
 	}()
 
 	return program
@@ -165,7 +165,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch command {
 				case "chat":
 					if !m.connected {
-						msgs := m.chat.Connect(m.session, m.callback)
+						msgs := m.chat.ConnectUser(m.session, m.callback)
 						m.msgs = msgs
 						m.connected = true
 					}

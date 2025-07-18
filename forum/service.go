@@ -49,7 +49,9 @@ type BoardService interface {
 }
 
 type ChatroomService interface {
-	Connect(session ssh.Session, callback func(msg Message)) []Message
-	Disconnect(id string)
+	ConnectUser(session ssh.Session, callback func(msg Message)) []Message
+	ConnectService(id string, callback func(msg Message)) []Message
+	DisconnectUser(id string)
+	DisconnectService(id string)
 	SendMsg(msg ChatMsg)
 }
