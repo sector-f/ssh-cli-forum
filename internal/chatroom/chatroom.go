@@ -50,6 +50,9 @@ func (s *Server) ConnectUser(session ssh.Session, callback func(forum.Message)) 
 		Text:      fmt.Sprintf("%s has joined", session.User()),
 	}
 
+	for _, f := range s.serviceFuncs {
+		f(msg)
+	}
 	for _, f := range s.userFuncs {
 		f(msg)
 	}
@@ -91,6 +94,9 @@ func (s *Server) DisconnectUser(id string) {
 		Text:      fmt.Sprintf("%s has quit", username),
 	}
 
+	for _, f := range s.serviceFuncs {
+		f(msg)
+	}
 	for _, f := range s.userFuncs {
 		f(msg)
 	}

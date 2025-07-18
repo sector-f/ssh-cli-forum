@@ -39,6 +39,14 @@ func main() {
 
 	chat := chatroom.NewServer(logger)
 
+	/*
+		loggerFunc, err := recorder.Open(logger, "./log.db")
+		if err != nil {
+			log.Fatal(err)
+		}
+		chat.ConnectService(recorder.ServiceID, loggerFunc)
+	*/
+
 	server, err := wish.NewServer(
 		wish.WithAddress(address),
 		wish.WithPublicKeyAuth(authHandler(logger, service)),
