@@ -3,12 +3,15 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
+	"regexp"
 	"time"
 
 	"github.com/charmbracelet/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"go.uber.org/zap"
 )
+
+var validUsername *regexp.Regexp = regexp.MustCompile("^[A-Za-z0-9-_]{1,20}$")
 
 func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) error {
 	if !isValidUsername(username) {
@@ -169,8 +172,13 @@ func (s *Service) ListUsers() ([]forum.User, error) {
 	return users, nil
 }
 
+// TODO: return error?
 func isValidUsername(s string) bool {
 	if s == forum.SignupUsername {
+		return false
+	}
+
+	if !validUsername.MatchString(s) {
 		return false
 	}
 
