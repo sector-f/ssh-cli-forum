@@ -102,8 +102,13 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) homeBuffer() string {
-	s := fmt.Sprintf("Available commands:\n\n\t* chat - use the real-time chat feature\n\t* exit - exit the program\n")
-	return s
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Logged in as %s\n\n", m.user))
+	sb.WriteString(fmt.Sprintln("Available commands:"))
+	sb.WriteString(fmt.Sprintln("\t* chat - real-time chat (press Escape to exit)"))
+	sb.WriteString(fmt.Sprintln("\t* exit - exit back to your terminal"))
+
+	return sb.String()
 }
 
 func (m model) chatBuffer() string {
