@@ -88,17 +88,11 @@ func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode s
 }
 
 func (s *Service) GetUserByID(id int) (forum.User, error) {
-	row := s.db.QueryRow(`SELECT id, username, pubkey, invite_code, is_admin FROM users WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, username, is_admin FROM users WHERE id = ?`, id)
 	var u User
-	var pubKey []byte
-	if err := row.Scan(&u.ID, &u.Username, pubKey, &u.InviteCode, &u.IsAdmin); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.IsAdmin); err != nil {
 		return forum.User{}, err
 	}
-	key, err := ssh.ParsePublicKey(pubKey)
-	if err != nil {
-		return forum.User{}, err
-	}
-	u.PubKey = key
 
 	forumUser := forum.User{
 		ID:       u.ID,
@@ -142,7 +136,7 @@ func (s *Service) AuthenticateUser(username string, givenKey ssh.PublicKey) bool
 }
 
 func (s *Service) ListUsers() ([]forum.User, error) {
-	rows, err := s.db.Query(`SELECT id, username, pubkey, invite_code, is_admin FROM users`)
+	rows, err := s.db.Query(`SELECT id, username, is_admin FROM users`)
 	if err != nil {
 		return nil, err
 	}
@@ -151,15 +145,9 @@ func (s *Service) ListUsers() ([]forum.User, error) {
 	var users []forum.User
 	for rows.Next() {
 		var u User
-		var pubKey []byte
-		if err := rows.Scan(&u.ID, &u.Username, &pubKey, &u.InviteCode, &u.IsAdmin); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.IsAdmin); err != nil {
 			return nil, err
 		}
-		key, err := ssh.ParsePublicKey(pubKey)
-		if err != nil {
-			return nil, err
-		}
-		u.PubKey = key
 
 		forumUser := forum.User{
 			ID:       u.ID,
