@@ -50,13 +50,7 @@ func (s *Server) ConnectUser(session ssh.Session, callback func(forum.Message)) 
 		Text:      fmt.Sprintf("%s has joined", session.User()),
 	}
 
-	for _, f := range s.serviceFuncs {
-		f(msg)
-	}
-	for _, f := range s.userFuncs {
-		f(msg)
-	}
-	s.storeMsg(msg)
+	s.broadcast(msg)
 
 	s.userFuncs[id] = callback
 	s.sessions[id] = session
@@ -94,14 +88,7 @@ func (s *Server) DisconnectUser(id string) {
 		Text:      fmt.Sprintf("%s has quit", username),
 	}
 
-	for _, f := range s.serviceFuncs {
-		f(msg)
-	}
-	for _, f := range s.userFuncs {
-		f(msg)
-	}
-
-	s.storeMsg(msg)
+	s.broadcast(msg)
 }
 
 func (s *Server) DisconnectService(id string) {
@@ -115,14 +102,19 @@ func (s *Server) SendMsg(msg forum.ChatMsg) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.broadcast(msg)
+	s.logger.Debug("Chat msg sent", zap.String("msg", msg.Body()))
+}
+
+func (s *Server) broadcast(msg forum.Message) {
 	for _, f := range s.serviceFuncs {
 		f(msg)
 	}
+
 	for _, f := range s.userFuncs {
 		f(msg)
 	}
 
-	s.logger.Debug("Chat msg sent", zap.String("msg", msg.Body()))
 	s.storeMsg(msg)
 }
 
