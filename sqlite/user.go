@@ -11,11 +11,16 @@ import (
 	"go.uber.org/zap"
 )
 
-var validUsername *regexp.Regexp = regexp.MustCompile("^[A-Za-z0-9-_]{1,20}$")
+var (
+	minUsernameLength = 3
+	maxUsernameLength = 20
+	validUsername     = regexp.MustCompile("^[A-Za-z0-9-_]*$")
+)
 
 func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) error {
-	if !isValidUsername(username) {
-		return forum.ErrUsernameInvalid
+	err := isValidUsername(username)
+	if err != nil {
+		return err
 	}
 
 	tx, err := s.db.Begin()
@@ -161,14 +166,22 @@ func (s *Service) ListUsers() ([]forum.User, error) {
 }
 
 // TODO: return error?
-func isValidUsername(s string) bool {
+func isValidUsername(s string) error {
 	if s == forum.SignupUsername {
-		return false
+		return forum.ErrUsernameInvalid
+	}
+
+	if len(s) < minUsernameLength {
+		return forum.ErrUsernameTooShort
+	}
+
+	if len(s) > maxUsernameLength {
+		return forum.ErrUsernameTooLong
 	}
 
 	if !validUsername.MatchString(s) {
-		return false
+		return forum.ErrUsernameInvalid
 	}
 
-	return true
+	return nil
 }

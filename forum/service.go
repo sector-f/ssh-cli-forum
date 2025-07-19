@@ -10,12 +10,16 @@ import (
 var (
 	SignupUsername = "signup"
 
-	ErrUserExists      = errors.New("username already exists")
-	ErrUsernameInvalid = errors.New("username is not valid")
-	ErrInviteUsed      = errors.New("invite code has already been used")
-	ErrInviteExpired   = errors.New("invite code has expired")
-	ErrInviteInvalid   = errors.New("invalid invite code")
-	ErrUnknown         = errors.New("unknown error")
+	ErrUserExists       = errors.New("username already exists")
+	ErrUsernameInvalid  = errors.New("username is not valid")
+	ErrUsernameTooShort = errors.New("username is too short")
+	ErrUsernameTooLong  = errors.New("username is too long")
+
+	ErrInviteUsed    = errors.New("invite code has already been used")
+	ErrInviteExpired = errors.New("invite code has expired")
+	ErrInviteInvalid = errors.New("invalid invite code")
+
+	ErrUnknown = errors.New("unknown error")
 )
 
 type UserService interface {
