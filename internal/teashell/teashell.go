@@ -3,6 +3,7 @@ package teashell
 import (
 	"bufio"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,9 +36,10 @@ type screen string
 
 // TODO: Can these just be ints?
 var (
-	screenHome   screen = "home"
-	screenChat   screen = "chatroom"
-	screenBoards screen = "boards"
+	screenHome    screen = "home"
+	screenChat    screen = "chatroom"
+	screenBoards  screen = "boards"
+	screenThreads screen = "threads"
 )
 
 type model struct {
@@ -47,6 +49,7 @@ type model struct {
 
 	boardService forum.BoardService
 	boards       []forum.BoardListing
+	currentBoard forum.Board
 
 	chat      forum.ChatroomService
 	msgs      []forum.Message
@@ -152,6 +155,27 @@ func (m model) boardsBuffer() string {
 	return sb.String()
 }
 
+func (m model) threadsBuffer() string {
+	var sb strings.Builder
+
+	fmt.Fprintf(&sb, "%s\n\n", m.currentBoard.Name)
+	for i, thread := range m.currentBoard.Threads {
+		numWidth := lipgloss.Width(strconv.Itoa(i))
+		spaces := strings.Repeat(" ", numWidth)
+
+		fmt.Fprintf(&sb, "%d. %s\n", i+1, thread.Title)
+		fmt.Fprintf(&sb, "%s  Posted by %s\n", spaces, thread.Author.Username)
+
+		if i < len(m.currentBoard.Threads)-1 {
+			continue
+		}
+
+		fmt.Fprintf(&sb, "\n")
+	}
+
+	return sb.String()
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
@@ -183,6 +207,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			command := strings.TrimSpace(m.input.Value())
+			m.input.Reset()
+
+			if command == "" {
+				break
+			}
+
 			switch m.screen {
 			case screenHome:
 				// TODO: is there a way to automate this?
@@ -209,7 +239,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				default:
 					// Display error message, somehow
 				}
-				m.input.Reset()
+			case screenBoards:
+				args := strings.Split(command, " ")
+				if len(args) != 2 {
+					// TODO: error message?
+					break
+				}
+
+				switch args[0] {
+				case "show":
+					index, err := strconv.Atoi(args[1])
+					if err != nil {
+						break
+					}
+
+					if index <= 0 || index > len(m.boards) {
+						break
+					}
+
+					bl := m.boards[index-1]
+					id := bl.ID
+					board, err := m.boardService.GetBoardByID(id)
+					if err != nil {
+						break
+					}
+
+					m.currentBoard = board
+					m.screen = screenThreads
+				}
 			case screenChat:
 				chatMsg := forum.ChatMsg{
 					Timestamp: time.Now(),
@@ -218,7 +275,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				cmds = append(cmds, func() tea.Msg { m.chat.SendMsg(chatMsg); return nil })
-				m.input.Reset()
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -245,6 +301,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.chatBuffer())
 	case screenBoards:
 		m.viewport.SetContent(m.boardsBuffer())
+	case screenThreads:
+		m.viewport.SetContent(m.threadsBuffer())
 	}
 
 	// Handle keyboard and mouse events in the viewport
