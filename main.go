@@ -51,7 +51,7 @@ func main() {
 		wish.WithAddress(address),
 		wish.WithPublicKeyAuth(authHandler(logger, service)),
 		wish.WithMiddleware(
-			bubbletea.MiddlewareWithProgramHandler(teashell.Handler(chat), termenv.Ascii),
+			bubbletea.MiddlewareWithProgramHandler(teashell.Handler(service, chat), termenv.Ascii),
 			signupMiddleware(logger, service),
 			loggingMiddleware(logger),
 			activeterm.Middleware(),

@@ -33,17 +33,20 @@ var (
 
 type screen string
 
+// TODO: Can these just be ints?
 var (
-	// Home screen
-	screenHome screen = "home"
-	// Chatroom screen
-	screenChat screen = "chatroom"
+	screenHome   screen = "home"
+	screenChat   screen = "chatroom"
+	screenBoards screen = "boards"
 )
 
 type model struct {
 	session ssh.Session
 	screen  screen
 	user    string
+
+	boardService forum.BoardService
+	boards       []forum.BoardListing
 
 	chat      forum.ChatroomService
 	msgs      []forum.Message
@@ -59,7 +62,7 @@ type model struct {
 	ready bool
 }
 
-func NewProgram(sess ssh.Session, chat forum.ChatroomService) *tea.Program {
+func NewProgram(sess ssh.Session, boardService forum.BoardService, chat forum.ChatroomService) *tea.Program {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Focus()
@@ -72,13 +75,14 @@ func NewProgram(sess ssh.Session, chat forum.ChatroomService) *tea.Program {
 	}
 
 	m := model{
-		session:    sess,
-		screen:     screenHome,
-		user:       sess.User(),
-		chat:       chat,
-		input:      ti,
-		headerText: "SSH Chatroom",
-		callback:   callback,
+		session:      sess,
+		screen:       screenHome,
+		user:         sess.User(),
+		boardService: boardService,
+		chat:         chat,
+		input:        ti,
+		headerText:   "SSH Chatroom",
+		callback:     callback,
 	}
 
 	program = tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
@@ -91,9 +95,9 @@ func NewProgram(sess ssh.Session, chat forum.ChatroomService) *tea.Program {
 	return program
 }
 
-func Handler(chat forum.ChatroomService) bubbletea.ProgramHandler {
+func Handler(boardService forum.BoardService, chat forum.ChatroomService) bubbletea.ProgramHandler {
 	return func(s ssh.Session) *tea.Program {
-		return NewProgram(s, chat)
+		return NewProgram(s, boardService, chat)
 	}
 }
 
@@ -103,10 +107,11 @@ func (m model) Init() tea.Cmd {
 
 func (m model) homeBuffer() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Logged in as %s\n\n", m.user))
-	sb.WriteString(fmt.Sprintln("Available commands:"))
-	sb.WriteString(fmt.Sprintln("\t* chat - real-time chat (press Escape to exit)"))
-	sb.WriteString(fmt.Sprintln("\t* exit - exit back to your terminal"))
+	fmt.Fprintf(&sb, "Logged in as %s\n\n", m.user)
+	fmt.Fprintln(&sb, "Available commands:")
+	fmt.Fprintln(&sb, "\t* boards - list boards")
+	fmt.Fprintln(&sb, "\t* chat - real-time chat")
+	fmt.Fprintln(&sb, "\t* exit - exit back to your terminal")
 
 	return sb.String()
 }
@@ -137,6 +142,16 @@ func (m model) chatBuffer() string {
 	return sb.String()
 }
 
+func (m model) boardsBuffer() string {
+	var sb strings.Builder
+
+	for i, board := range m.boards {
+		fmt.Fprintf(&sb, "%d. %s\n", i+1, board.Name)
+	}
+
+	return sb.String()
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
@@ -150,6 +165,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc":
 			switch m.screen {
+			case screenBoards:
+				m.screen = screenHome
 			case screenChat:
 				m.screen = screenHome
 			default:
@@ -157,6 +174,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "ctrl+c":
 			switch m.screen {
+			case screenBoards:
+				m.screen = screenHome
 			case screenChat:
 				m.screen = screenHome
 			default:
@@ -176,6 +195,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 
 					m.screen = screenChat
+				case "boards":
+					b, err := m.boardService.ListBoards()
+					if err != nil {
+						// TODO: actual error handling
+						break
+					}
+					m.boards = b
+
+					m.screen = screenBoards
 				case "exit", "quit":
 					return m, tea.Quit
 				default:
@@ -215,6 +243,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(m.homeBuffer())
 	case screenChat:
 		m.viewport.SetContent(m.chatBuffer())
+	case screenBoards:
+		m.viewport.SetContent(m.boardsBuffer())
 	}
 
 	// Handle keyboard and mouse events in the viewport

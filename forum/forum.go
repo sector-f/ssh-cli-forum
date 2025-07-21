@@ -22,6 +22,7 @@ type BoardListing struct {
 	Name string
 }
 
+// TODO: add description
 type Board struct {
 	ID      int
 	Name    string
