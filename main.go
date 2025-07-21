@@ -135,6 +135,7 @@ func signupMiddleware(logger *zap.Logger, service forum.UserService) func(next s
 			if err != nil {
 				fmt.Fprintf(s, "Error: %s\n", err)
 				s.Exit(1)
+				return
 			}
 
 			fmt.Fprintln(s, "User created successfully")
