@@ -36,7 +36,7 @@ func newChatModel(session ssh.Session, service forum.ChatroomService, callback f
 	ti.Prompt = "> "
 	ti.Focus()
 
-	msgs := service.ConnectService(session.Context().SessionID(), callback)
+	msgs := service.ConnectUser(session, callback)
 
 	m := chatModel{
 		session:    session,
@@ -66,7 +66,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
-			return m, tea.Quit
+			return m, ChangeScreenCmd(screenHome, 0)
 		case "enter":
 			message := strings.TrimSpace(m.input.Value())
 			m.input.Reset()
