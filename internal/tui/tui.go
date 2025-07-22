@@ -43,7 +43,7 @@ type screen string
 const (
 	screenHome   screen = "SSH Bulletin Board"
 	screenBoards screen = "Board List"
-	screenChat   screen = "Chatroom"
+	screenChat   screen = "SSH Chatroom"
 )
 
 type rootModel struct {
@@ -68,7 +68,7 @@ func New(sess ssh.Session, boardService forum.BoardService, user forum.User, cha
 
 	m := rootModel{
 		screens:  screens,
-		current:  screenHome,
+		current:  screenChat,
 		callback: callback,
 	}
 

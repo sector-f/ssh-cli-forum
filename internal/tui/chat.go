@@ -65,8 +65,10 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scrollback = append(m.scrollback, msg)
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "esc":
-			return m, ChangeScreenCmd(screenHome, 0)
+		case "ctrl+c":
+			return m, tea.Quit
+		// case "ctrl+c", "esc":
+		//	 return m, ChangeScreenCmd(screenHome, 0)
 		case "enter":
 			message := strings.TrimSpace(m.input.Value())
 			m.input.Reset()

@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 	"github.com/charmbracelet/wish/activeterm"
@@ -15,7 +14,6 @@ import (
 	"github.com/sector-f/ssh-cli-forum/forum"
 	"github.com/sector-f/ssh-cli-forum/internal/chatroom"
 	"github.com/sector-f/ssh-cli-forum/internal/signup"
-	"github.com/sector-f/ssh-cli-forum/internal/table"
 	"github.com/sector-f/ssh-cli-forum/internal/tui"
 	"github.com/sector-f/ssh-cli-forum/sqlite"
 	"go.uber.org/zap"
@@ -88,13 +86,6 @@ func authHandler(logger *zap.Logger, service forum.UserService) ssh.PublicKeyHan
 		}
 
 		return service.AuthenticateUser(username, key)
-	}
-}
-
-func tableHandler(logger *zap.Logger, service forum.UserService) bubbletea.Handler {
-	return func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
-		m := table.New(logger, service)
-		return m, []tea.ProgramOption{tea.WithAltScreen()}
 	}
 }
 
