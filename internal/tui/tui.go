@@ -1,10 +1,27 @@
 package tui
 
 import (
+	"fmt"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/sector-f/ssh-cli-forum/forum"
+)
+
+var (
+	titleStyle = func() lipgloss.Style {
+		b := lipgloss.NormalBorder()
+		return lipgloss.NewStyle().BorderStyle(b).Padding(0, 1)
+	}()
+
+	infoStyle = func() lipgloss.Style {
+		b := lipgloss.RoundedBorder()
+		b.Left = "┤"
+		return titleStyle.BorderStyle(b)
+	}()
 )
 
 type ChangeSceenMsg struct {
@@ -93,7 +110,7 @@ func (m rootModel) View() string {
 		return "Invalid screen"
 	}
 
-	return current.View()
+	return fmt.Sprintf("%s\n%s", m.headerView(), current.View())
 }
 
 func NewProgram(sess ssh.Session, userService forum.UserService, boardService forum.BoardService, chatService forum.ChatroomService) *tea.Program {
@@ -112,4 +129,15 @@ func Handler(userService forum.UserService, boardService forum.BoardService, cha
 	return func(s ssh.Session) *tea.Program {
 		return NewProgram(s, userService, boardService, chatService)
 	}
+}
+
+func (m rootModel) headerView() string {
+	text := "SSH Bulletin Board"
+
+	title := titleStyle.Render(text)
+	line := strings.Repeat(
+		"─",
+		max(0, (m.width-lipgloss.Width(title))/2),
+	)
+	return lipgloss.JoinHorizontal(lipgloss.Center, line, title, line)
 }

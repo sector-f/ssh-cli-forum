@@ -67,7 +67,7 @@ func (m homeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.input.Width = msg.Width - lipgloss.Width(m.input.Prompt) - 1
-		verticalMarginHeight := lipgloss.Height(m.input.View()) + 1
+		verticalMarginHeight := lipgloss.Height(m.input.View()) + 1 + 3
 
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
@@ -76,9 +76,9 @@ func (m homeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = msg.Height - verticalMarginHeight
 		}
-	}
 
-	m.viewport.SetContent(m.bufferContents())
+		m.viewport.SetContent(m.bufferContents())
+	}
 
 	// Handle keyboard and mouse events in the viewport
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -92,8 +92,9 @@ func (m homeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m homeModel) View() string {
 	return fmt.Sprintf(
-		"%s\n%s\n",
+		"%s\n%s\n%s",
 		m.viewport.View(),
+		strings.Repeat("─", max(0, m.viewport.Width)),
 		m.input.View(),
 	)
 }
