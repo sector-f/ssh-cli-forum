@@ -59,6 +59,8 @@ func (m homeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch command {
 			case "boards":
 				return m, ChangeScreenCmd(screenBoards, 0)
+			case "chat":
+				return m, ChangeScreenCmd(screenChat, 0)
 			case "exit", "quit":
 				return m, tea.Quit
 			default:
@@ -108,7 +110,7 @@ func (m homeModel) bufferContents() string {
 	fmt.Fprintf(&sb, "Logged in as %s\n\n", m.user)
 	fmt.Fprintln(&sb, "Available commands:")
 	fmt.Fprintln(&sb, "\t* boards - list boards")
-	// fmt.Fprintln(&sb, "\t* chat - real-time chat")
+	fmt.Fprintln(&sb, "\t* chat - real-time chat")
 	fmt.Fprintln(&sb, "\t* exit - exit back to your terminal")
 	return sb.String()
 }

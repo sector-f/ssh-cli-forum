@@ -43,12 +43,15 @@ type screen string
 const (
 	screenHome   screen = "SSH Bulletin Board"
 	screenBoards screen = "Board List"
-	//screenChat   screen = "chat"
+	screenChat   screen = "Chatroom"
 )
 
 type rootModel struct {
 	screens map[screen]tea.Model
 	current screen
+
+	// Used by chat service to send messages to this Program
+	callback func(msg forum.Message)
 
 	width  int
 	height int
@@ -56,15 +59,17 @@ type rootModel struct {
 
 var _ tea.Model = rootModel{}
 
-func New(sess ssh.Session, boardService forum.BoardService, user forum.User, chatService forum.ChatroomService) tea.Model {
+func New(sess ssh.Session, boardService forum.BoardService, user forum.User, chatService forum.ChatroomService, callback func(msg forum.Message)) tea.Model {
 	screens := map[screen]tea.Model{
 		screenHome:   newHomeModel(user.Username),
 		screenBoards: newBoardsModel(boardService, user),
+		screenChat:   newChatModel(sess, chatService, callback),
 	}
 
 	m := rootModel{
-		screens: screens,
-		current: screenHome,
+		screens:  screens,
+		current:  screenHome,
+		callback: callback,
 	}
 
 	return m
@@ -84,6 +89,12 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+	case forum.Message:
+		m.screens[screenChat], cmd = m.screens[screenChat].Update(msg)
+		if m.current != screenChat {
+			return m, nil
+		}
+		return m, cmd
 	case ChangeSceenMsg:
 		newScreen := msg.Screen
 		m.current = newScreen
@@ -120,8 +131,19 @@ func NewProgram(sess ssh.Session, userService forum.UserService, boardService fo
 		return nil
 	}
 
-	m := New(sess, boardService, user, chatService)
-	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
+	var program *tea.Program
+	callback := func(msg forum.Message) {
+		program.Send(msg)
+	}
+
+	m := New(sess, boardService, user, chatService, callback)
+	program = tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
+
+	go func() {
+		program.Wait()
+		chatService.DisconnectUser(sess.Context().SessionID())
+	}()
+
 	return program
 }
 
