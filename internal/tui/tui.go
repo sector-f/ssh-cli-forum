@@ -5,8 +5,6 @@ import (
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/sector-f/ssh-cli-forum/forum"
-	"github.com/sector-f/ssh-cli-forum/internal/tui/boards"
-	"github.com/sector-f/ssh-cli-forum/internal/tui/home"
 )
 
 type screen string
@@ -25,8 +23,8 @@ var _ tea.Model = rootModel{}
 
 func New(boardService forum.BoardService, user forum.User) tea.Model {
 	screens := map[screen]tea.Model{
-		screenHome:   home.New(user.Username),
-		screenBoards: boards.New(boardService, user),
+		screenHome:   newHomeModel(user.Username),
+		screenBoards: newBoardsModel(boardService, user),
 	}
 
 	m := rootModel{

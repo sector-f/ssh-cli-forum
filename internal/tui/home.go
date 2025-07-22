@@ -1,4 +1,4 @@
-package boards
+package tui
 
 import (
 	"fmt"
@@ -8,45 +8,36 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
-type model struct {
-	service forum.BoardService
-	user    forum.User
-	list    []forum.BoardListing
+type homeModel struct {
+	user string
 
 	viewport viewport.Model
 	input    textinput.Model
 	ready    bool
 }
 
-var _ tea.Model = model{}
+var _ tea.Model = homeModel{}
 
-func New(service forum.BoardService, user forum.User) tea.Model {
+func newHomeModel(user string) tea.Model {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Focus()
 
-	// TODO: error handling.
-	// Error field on struct that gets displayed instead of list?
-	boards, _ := service.ListBoards()
-
-	m := model{
-		service: service,
-		user:    user,
-		list:    boards,
-		input:   ti,
+	m := homeModel{
+		user:  user,
+		input: ti,
 	}
 
 	return m
 }
 
-func (m model) Init() tea.Cmd {
+func (m homeModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m homeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
@@ -56,7 +47,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
-			// TODO: change screen message
 			return m, tea.Quit
 		case "enter":
 			command := strings.TrimSpace(m.input.Value())
@@ -64,6 +54,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if command == "" {
 				break
+			}
+
+			switch command {
+			// case "boards":
+
+			case "exit", "quit":
+				return m, tea.Quit
+			default:
+				// Display error message, somehow
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -91,7 +90,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m model) View() string {
+func (m homeModel) View() string {
 	return fmt.Sprintf(
 		"%s\n%s\n",
 		m.viewport.View(),
@@ -99,16 +98,16 @@ func (m model) View() string {
 	)
 }
 
-func (m model) bufferContents() string {
+func (m homeModel) bufferContents() string {
 	if !m.ready {
 		return "Initializing\n\n"
 	}
 
 	var sb strings.Builder
-
-	for i, board := range m.list {
-		fmt.Fprintf(&sb, "%d. %s\n", i+1, board.Name)
-	}
-
+	fmt.Fprintf(&sb, "\nLogged in as %s\n\n", m.user)
+	fmt.Fprintln(&sb, "Available commands:")
+	fmt.Fprintln(&sb, "\t* boards - list boards")
+	fmt.Fprintln(&sb, "\t* chat - real-time chat")
+	fmt.Fprintln(&sb, "\t* exit - exit back to your terminal")
 	return sb.String()
 }
