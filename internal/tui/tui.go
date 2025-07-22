@@ -7,15 +7,27 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/tui/home"
 )
 
+type screen string
+
+const (
+	screenHome screen = "home"
+)
+
 type rootModel struct {
-	home tea.Model
+	screens map[screen]tea.Model
+	current screen
 }
 
 var _ tea.Model = rootModel{}
 
 func New(username string) tea.Model {
+	screens := map[screen]tea.Model{
+		screenHome: home.New(username),
+	}
+
 	m := rootModel{
-		home: home.New(username),
+		screens: screens,
+		current: screenHome,
 	}
 
 	return m
@@ -27,12 +39,13 @@ func (m rootModel) Init() tea.Cmd {
 
 func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	m.home, cmd = m.home.Update(msg)
+
+	m.screens[m.current], cmd = m.screens[m.current].Update(msg)
 	return m, cmd
 }
 
 func (m rootModel) View() string {
-	return m.home.View()
+	return m.screens[m.current].View()
 }
 
 func NewProgram(sess ssh.Session) *tea.Program {
