@@ -12,6 +12,7 @@ type screen string
 const (
 	screenHome   screen = "home"
 	screenBoards screen = "boards"
+	screenChat   screen = "chat"
 )
 
 type rootModel struct {
@@ -21,7 +22,7 @@ type rootModel struct {
 
 var _ tea.Model = rootModel{}
 
-func New(boardService forum.BoardService, user forum.User) tea.Model {
+func New(sess ssh.Session, boardService forum.BoardService, user forum.User, chatService forum.ChatroomService) tea.Model {
 	screens := map[screen]tea.Model{
 		screenHome:   newHomeModel(user.Username),
 		screenBoards: newBoardsModel(boardService, user),
@@ -47,23 +48,29 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m rootModel) View() string {
-	return m.screens[m.current].View()
+	current, ok := m.screens[m.current]
+	if !ok {
+		// This should never happen
+		return "Invalid screen"
+	}
+
+	return current.View()
 }
 
-func NewProgram(sess ssh.Session, userService forum.UserService, boardService forum.BoardService) *tea.Program {
+func NewProgram(sess ssh.Session, userService forum.UserService, boardService forum.BoardService, chatService forum.ChatroomService) *tea.Program {
 	user, err := userService.GetUserByUsername(sess.User())
 	if err != nil {
 		// TODO: Log this? Return err somehow?
 		return nil
 	}
 
-	m := New(boardService, user)
+	m := New(sess, boardService, user, chatService)
 	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
 	return program
 }
 
-func Handler(userService forum.UserService, boardService forum.BoardService) bubbletea.ProgramHandler {
+func Handler(userService forum.UserService, boardService forum.BoardService, chatService forum.ChatroomService) bubbletea.ProgramHandler {
 	return func(s ssh.Session) *tea.Program {
-		return NewProgram(s, userService, boardService)
+		return NewProgram(s, userService, boardService, chatService)
 	}
 }
