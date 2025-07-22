@@ -1,19 +1,13 @@
 package teashell
 
 import (
-	"bufio"
-	"fmt"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish/bubbletea"
-	"github.com/muesli/reflow/wordwrap"
 	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
@@ -43,26 +37,31 @@ var (
 )
 
 type model struct {
-	session ssh.Session
-	screen  screen
-	user    string
-
+	session      ssh.Session
+	user         string
 	boardService forum.BoardService
-	boards       []forum.BoardListing
-	currentBoard forum.Board
 
-	chat      forum.ChatroomService
-	msgs      []forum.Message
-	callback  func(forum.Message)
-	connected bool
+	screen  screen
+	screens map[screen]tea.Model
 
-	viewport   viewport.Model
-	input      textinput.Model
-	buffer     string
-	headerText string
-	width      int
+	width int
 
-	ready bool
+	/*
+		boards       []forum.BoardListing
+		currentBoard forum.Board
+
+		chat      forum.ChatroomService
+		msgs      []forum.Message
+		callback  func(forum.Message)
+		connected bool
+
+		viewport   viewport.Model
+		input      textinput.Model
+		buffer     string
+		headerText string
+
+		ready bool
+	*/
 }
 
 func NewProgram(sess ssh.Session, boardService forum.BoardService, chat forum.ChatroomService) *tea.Program {
@@ -70,30 +69,33 @@ func NewProgram(sess ssh.Session, boardService forum.BoardService, chat forum.Ch
 	ti.Prompt = "> "
 	ti.Focus()
 
-	id := sess.Context().SessionID()
+	// id := sess.Context().SessionID()
 
-	var program *tea.Program
-	callback := func(msg forum.Message) {
-		program.Send(msg)
-	}
+	/*
+		var program *tea.Program
+		callback := func(msg forum.Message) {
+			program.Send(msg)
+		}
+	*/
 
 	m := model{
-		session:      sess,
-		screen:       screenHome,
-		user:         sess.User(),
-		boardService: boardService,
-		chat:         chat,
-		input:        ti,
-		headerText:   "SSH Chatroom",
-		callback:     callback,
+		session: sess,
+		screen:  screenHome,
+		user:    sess.User(),
+		// chat:       chat,
+		// input:      ti,
+		// headerText: "SSH Chatroom",
+		// callback:   callback,
 	}
 
-	program = tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
+	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
 
-	go func() {
-		program.Wait()
-		chat.DisconnectUser(id)
-	}()
+	/*
+		go func() {
+			program.Wait()
+			chat.DisconnectUser(id)
+		}()
+	*/
 
 	return program
 }
@@ -108,17 +110,7 @@ func (m model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m model) homeBuffer() string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Logged in as %s\n\n", m.user)
-	fmt.Fprintln(&sb, "Available commands:")
-	fmt.Fprintln(&sb, "\t* boards - list boards")
-	fmt.Fprintln(&sb, "\t* chat - real-time chat")
-	fmt.Fprintln(&sb, "\t* exit - exit back to your terminal")
-
-	return sb.String()
-}
-
+/*
 func (m model) chatBuffer() string {
 	var sb strings.Builder
 
@@ -144,17 +136,9 @@ func (m model) chatBuffer() string {
 
 	return sb.String()
 }
+*/
 
-func (m model) boardsBuffer() string {
-	var sb strings.Builder
-
-	for i, board := range m.boards {
-		fmt.Fprintf(&sb, "%d. %s\n", i+1, board.Name)
-	}
-
-	return sb.String()
-}
-
+/*
 func (m model) threadsBuffer() string {
 	var sb strings.Builder
 
@@ -175,7 +159,20 @@ func (m model) threadsBuffer() string {
 
 	return sb.String()
 }
+*/
 
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var (
+		cmd tea.Cmd
+		// cmds []tea.Cmd
+	)
+
+	currentModel := m.screens[m.screen]
+	_, cmd = currentModel.Update(msg)
+	return m, cmd
+}
+
+/*
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
@@ -246,6 +243,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 
+				// Use new tea.Cmd type for changing to new board/thread?
+				// Can probably just get list of threads once at program start.
 				switch args[0] {
 				case "show":
 					index, err := strconv.Atoi(args[1])
@@ -314,7 +313,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(cmds...)
 }
+*/
 
+func (m model) View() string {
+	currentModel := m.screens[m.screen]
+	return currentModel.View()
+}
+
+/*
 func (m model) View() string {
 	if !m.ready {
 		return "\n  Initializing..."
@@ -322,18 +328,19 @@ func (m model) View() string {
 
 	return fmt.Sprintf(
 		"%s\n%s\n%s\n%s",
-		m.headerView(),
+		headerView(m.width),
 		m.viewport.View(),
 		strings.Repeat("─", max(0, m.viewport.Width)),
 		m.input.View(),
 	)
 }
+*/
 
-func (m model) headerView() string {
-	title := titleStyle.Render(m.headerText)
+func headerView(text string, width int) string {
+	title := titleStyle.Render(text)
 	line := strings.Repeat(
 		"─",
-		max(0, (m.viewport.Width-lipgloss.Width(title))/2),
+		max(0, (width-lipgloss.Width(title))/2),
 	)
 	return lipgloss.JoinHorizontal(lipgloss.Center, line, title, line)
 }
