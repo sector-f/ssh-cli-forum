@@ -7,17 +7,34 @@ import (
 	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
+type ChangeSceenMsg struct {
+	Screen screen
+	ID     int // Board or Thread ID
+}
+
+func ChangeScreenCmd(s screen, id int) tea.Cmd {
+	return func() tea.Msg {
+		return ChangeSceenMsg{
+			Screen: s,
+			ID:     id,
+		}
+	}
+}
+
 type screen string
 
 const (
 	screenHome   screen = "home"
 	screenBoards screen = "boards"
-	screenChat   screen = "chat"
+	//screenChat   screen = "chat"
 )
 
 type rootModel struct {
 	screens map[screen]tea.Model
 	current screen
+
+	width  int
+	height int
 }
 
 var _ tea.Model = rootModel{}
@@ -41,10 +58,32 @@ func (m rootModel) Init() tea.Cmd {
 }
 
 func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
+	var (
+		cmd  tea.Cmd
+		cmds []tea.Cmd
+	)
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+	case ChangeSceenMsg:
+		newScreen := msg.Screen
+		m.current = newScreen
+
+		wsm := tea.WindowSizeMsg{
+			Width:  m.width,
+			Height: m.height,
+		}
+
+		m.screens[m.current], cmd = m.screens[m.current].Update(wsm)
+		cmds = append(cmds, cmd)
+	}
 
 	m.screens[m.current], cmd = m.screens[m.current].Update(msg)
-	return m, cmd
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m rootModel) View() string {
