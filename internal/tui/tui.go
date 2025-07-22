@@ -4,13 +4,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish/bubbletea"
+	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/tui/boards"
 	"github.com/sector-f/ssh-cli-forum/internal/tui/home"
 )
 
 type screen string
 
 const (
-	screenHome screen = "home"
+	screenHome   screen = "home"
+	screenBoards screen = "boards"
 )
 
 type rootModel struct {
@@ -20,9 +23,10 @@ type rootModel struct {
 
 var _ tea.Model = rootModel{}
 
-func New(username string) tea.Model {
+func New(boardService forum.BoardService, user forum.User) tea.Model {
 	screens := map[screen]tea.Model{
-		screenHome: home.New(username),
+		screenHome:   home.New(user.Username),
+		screenBoards: boards.New(boardService, user),
 	}
 
 	m := rootModel{
@@ -48,15 +52,20 @@ func (m rootModel) View() string {
 	return m.screens[m.current].View()
 }
 
-func NewProgram(sess ssh.Session) *tea.Program {
-	username := sess.User()
-	m := New(username)
+func NewProgram(sess ssh.Session, userService forum.UserService, boardService forum.BoardService) *tea.Program {
+	user, err := userService.GetUserByUsername(sess.User())
+	if err != nil {
+		// TODO: Log this? Return err somehow?
+		return nil
+	}
+
+	m := New(boardService, user)
 	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithInput(sess), tea.WithOutput(sess))
 	return program
 }
 
-func Handler() bubbletea.ProgramHandler {
+func Handler(userService forum.UserService, boardService forum.BoardService) bubbletea.ProgramHandler {
 	return func(s ssh.Session) *tea.Program {
-		return NewProgram(s)
+		return NewProgram(s, userService, boardService)
 	}
 }
