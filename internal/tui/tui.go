@@ -41,8 +41,8 @@ func ChangeScreenCmd(s screen, id int) tea.Cmd {
 type screen string
 
 const (
-	screenHome   screen = "home"
-	screenBoards screen = "boards"
+	screenHome   screen = "SSH Bulletin Board"
+	screenBoards screen = "Board List"
 	//screenChat   screen = "chat"
 )
 
@@ -132,7 +132,7 @@ func Handler(userService forum.UserService, boardService forum.BoardService, cha
 }
 
 func (m rootModel) headerView() string {
-	text := "SSH Bulletin Board"
+	text := string(m.current)
 
 	title := titleStyle.Render(text)
 	line := strings.Repeat(

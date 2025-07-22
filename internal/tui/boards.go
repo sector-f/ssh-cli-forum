@@ -68,7 +68,7 @@ func (m boardsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.input.Width = msg.Width - lipgloss.Width(m.input.Prompt) - 1
-		verticalMarginHeight := lipgloss.Height(m.input.View()) + 1
+		verticalMarginHeight := lipgloss.Height(m.input.View()) + 1 + 3
 
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
@@ -93,8 +93,9 @@ func (m boardsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m boardsModel) View() string {
 	return fmt.Sprintf(
-		"%s\n%s\n",
+		"%s\n%s\n%s",
 		m.viewport.View(),
+		strings.Repeat("─", max(0, m.viewport.Width)),
 		m.input.View(),
 	)
 }

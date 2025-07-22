@@ -105,7 +105,7 @@ func (m homeModel) bufferContents() string {
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "\nLogged in as %s\n\n", m.user)
+	fmt.Fprintf(&sb, "Logged in as %s\n\n", m.user)
 	fmt.Fprintln(&sb, "Available commands:")
 	fmt.Fprintln(&sb, "\t* boards - list boards")
 	// fmt.Fprintln(&sb, "\t* chat - real-time chat")
