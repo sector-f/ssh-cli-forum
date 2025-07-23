@@ -70,7 +70,7 @@ func New(sess ssh.Session, boardService forum.BoardService, user forum.User, cha
 
 	m := rootModel{
 		screens:  screens,
-		current:  screenChat,
+		current:  screenHome,
 		callback: callback,
 	}
 

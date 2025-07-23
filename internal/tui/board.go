@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -12,52 +11,57 @@ import (
 	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
-type boardListModel struct {
+type boardModel struct {
 	service forum.BoardService
-	list    []forum.BoardListing
+	board   forum.Board
 
 	viewport viewport.Model
 	input    textinput.Model
 	ready    bool
 }
 
-var _ tea.Model = boardListModel{}
+var _ tea.Model = boardModel{}
 
-func newBoardListModel(service forum.BoardService) tea.Model {
+func newBoardModel(service forum.BoardService) tea.Model {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Focus()
 
-	// TODO: error handling.
-	// Error field on struct that gets displayed instead of list?
-	boards, _ := service.ListBoards()
-
-	m := boardListModel{
+	m := boardModel{
 		service: service,
-		list:    boards,
 		input:   ti,
 	}
 
 	return m
 }
 
-func (m boardListModel) Init() tea.Cmd {
+func (m boardModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m boardListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
 	)
 
 	switch msg := msg.(type) {
+	case ChangeSceenMsg:
+		if msg.Screen != screenBoard {
+			break
+		}
+
+		board, err := m.service.GetBoardByID(msg.ID)
+		if err != nil {
+			break
+		}
+
+		m.board = board
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
-			return m, ChangeScreenCmd(screenHome, 0)
+			return m, ChangeScreenCmd(screenBoardList, 0)
 		case "ctrl+c":
-			// TODO: change screen message
 			return m, tea.Quit
 		case "enter":
 			command := strings.TrimSpace(m.input.Value())
@@ -65,26 +69,6 @@ func (m boardListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if command == "" {
 				break
-			}
-
-			args := strings.Fields(command)
-			switch args[0] {
-			case "show":
-				if len(args) != 2 {
-					break
-				}
-
-				index, err := strconv.Atoi(args[1])
-				if err != nil {
-					break
-				}
-
-				if index <= 0 || index > len(m.list) {
-					break
-				}
-
-				selection := m.list[index-1]
-				return m, ChangeScreenCmd(screenBoard, selection.ID)
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -112,7 +96,7 @@ func (m boardListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m boardListModel) View() string {
+func (m boardModel) View() string {
 	return fmt.Sprintf(
 		"%s\n%s\n%s",
 		m.viewport.View(),
@@ -121,15 +105,16 @@ func (m boardListModel) View() string {
 	)
 }
 
-func (m boardListModel) bufferContents() string {
+func (m boardModel) bufferContents() string {
 	if !m.ready {
 		return "Initializing\n\n"
 	}
 
 	var sb strings.Builder
 
-	for i, board := range m.list {
-		fmt.Fprintf(&sb, "%d. %s\n", i+1, board.Name)
+	fmt.Fprintf(&sb, "%s:\n\n", m.board.Name)
+	for i, thread := range m.board.Threads {
+		fmt.Fprintf(&sb, "%d. %s\n", i+1, thread.Title)
 	}
 
 	return sb.String()
