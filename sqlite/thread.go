@@ -18,8 +18,8 @@ func (s *Service) GetThreadByID(id int) (forum.Thread, error) {
 	defer tx.Rollback()
 
 	var t Thread
-	row := tx.QueryRow(`SELECT id, title, board_id, author_id FROM threads WHERE id = ?`, id)
-	if err := row.Scan(&t.ID, &t.Title, &t.BoardID, &t.AuthorID); err != nil {
+	row := tx.QueryRow(`SELECT id, title, board_id, author_id, body FROM threads WHERE id = ?`, id)
+	if err := row.Scan(&t.ID, &t.Title, &t.BoardID, &t.AuthorID, &t.Body); err != nil {
 		return forum.Thread{}, err
 	}
 

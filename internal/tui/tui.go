@@ -45,6 +45,7 @@ const (
 	screenBoardList screen = "Boards"
 	screenBoard     screen = "Threads"
 	screenChat      screen = "SSH Chatroom"
+	screenThread    screen = "Thread"
 )
 
 type rootModel struct {
@@ -66,6 +67,7 @@ func New(sess ssh.Session, boardService forum.BoardService, user forum.User, cha
 		screenBoardList: newBoardListModel(boardService),
 		screenChat:      newChatModel(sess, chatService, callback),
 		screenBoard:     newBoardModel(boardService),
+		screenThread:    newThreadModel(boardService),
 	}
 
 	m := rootModel{
@@ -98,8 +100,7 @@ func (m rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	case ChangeSceenMsg:
-		newScreen := msg.Screen
-		m.current = newScreen
+		m.current = msg.Screen
 
 		wsm := tea.WindowSizeMsg{
 			Width:  m.width,

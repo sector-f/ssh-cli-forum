@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -51,6 +52,10 @@ func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 
+		if msg.ID == 0 {
+			break
+		}
+
 		board, err := m.service.GetBoardByID(msg.ID)
 		if err != nil {
 			break
@@ -69,6 +74,26 @@ func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if command == "" {
 				break
+			}
+
+			args := strings.Fields(command)
+			switch args[0] {
+			case "show":
+				if len(args) != 2 {
+					break
+				}
+
+				index, err := strconv.Atoi(args[1])
+				if err != nil {
+					break
+				}
+
+				if index <= 0 || index > len(m.board.Threads) {
+					break
+				}
+
+				selection := m.board.Threads[index-1]
+				return m, ChangeScreenCmd(screenThread, selection.ID)
 			}
 		}
 	case tea.WindowSizeMsg:
