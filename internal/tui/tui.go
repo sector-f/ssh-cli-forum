@@ -41,9 +41,10 @@ func ChangeScreenCmd(s screen, id int) tea.Cmd {
 type screen string
 
 const (
-	screenHome   screen = "SSH Bulletin Board"
-	screenBoards screen = "Board List"
-	screenChat   screen = "SSH Chatroom"
+	screenHome    screen = "SSH Bulletin Board"
+	screenBoards  screen = "Boards"
+	screenChat    screen = "SSH Chatroom"
+	screenThreads screen = "Threads"
 )
 
 type rootModel struct {
@@ -61,9 +62,10 @@ var _ tea.Model = rootModel{}
 
 func New(sess ssh.Session, boardService forum.BoardService, user forum.User, chatService forum.ChatroomService, callback func(msg forum.Message)) tea.Model {
 	screens := map[screen]tea.Model{
-		screenHome:   newHomeModel(user.Username),
-		screenBoards: newBoardsModel(boardService, user),
-		screenChat:   newChatModel(sess, chatService, callback),
+		screenHome:    newHomeModel(user.Username),
+		screenBoards:  newBoardsModel(boardService),
+		screenChat:    newChatModel(sess, chatService, callback),
+		screenThreads: newThreadsModel(boardService),
 	}
 
 	m := rootModel{

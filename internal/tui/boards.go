@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -13,7 +14,6 @@ import (
 
 type boardsModel struct {
 	service forum.BoardService
-	user    forum.User
 	list    []forum.BoardListing
 
 	viewport viewport.Model
@@ -23,7 +23,7 @@ type boardsModel struct {
 
 var _ tea.Model = boardsModel{}
 
-func newBoardsModel(service forum.BoardService, user forum.User) tea.Model {
+func newBoardsModel(service forum.BoardService) tea.Model {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Focus()
@@ -34,7 +34,6 @@ func newBoardsModel(service forum.BoardService, user forum.User) tea.Model {
 
 	m := boardsModel{
 		service: service,
-		user:    user,
 		list:    boards,
 		input:   ti,
 	}
@@ -55,7 +54,9 @@ func (m boardsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "esc":
+		case "esc":
+			return m, ChangeScreenCmd(screenHome, 0)
+		case "ctrl+c":
 			// TODO: change screen message
 			return m, tea.Quit
 		case "enter":
@@ -64,6 +65,26 @@ func (m boardsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			if command == "" {
 				break
+			}
+
+			args := strings.Fields(command)
+			switch args[0] {
+			case "show":
+				if len(args) != 2 {
+					break
+				}
+
+				index, err := strconv.Atoi(args[1])
+				if err != nil {
+					break
+				}
+
+				if index <= 0 || index > len(m.list) {
+					break
+				}
+
+				selection := m.list[index-1]
+				return m, ChangeScreenCmd(screenThreads, selection.ID)
 			}
 		}
 	case tea.WindowSizeMsg:
