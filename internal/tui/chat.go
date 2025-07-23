@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,27 +30,6 @@ type chatModel struct {
 }
 
 var _ tea.Model = chatModel{}
-
-var km = viewport.KeyMap{
-	PageDown: key.NewBinding(
-		key.WithKeys("pgdown"),
-	),
-	PageUp: key.NewBinding(
-		key.WithKeys("pgup"),
-	),
-	HalfPageUp: key.NewBinding(
-		key.WithKeys("ctrl+u"),
-	),
-	HalfPageDown: key.NewBinding(
-		key.WithKeys("ctrl+d"),
-	),
-	Up: key.NewBinding(
-		key.WithKeys("up"),
-	),
-	Down: key.NewBinding(
-		key.WithKeys("down"),
-	),
-}
 
 func newChatModel(session ssh.Session, service forum.ChatroomService, callback func(forum.Message)) tea.Model {
 	ti := textinput.New()

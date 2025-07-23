@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/ssh"
@@ -22,6 +24,27 @@ var (
 		b.Left = "┤"
 		return titleStyle.BorderStyle(b)
 	}()
+
+	km = viewport.KeyMap{
+		PageDown: key.NewBinding(
+			key.WithKeys("pgdown"),
+		),
+		PageUp: key.NewBinding(
+			key.WithKeys("pgup"),
+		),
+		HalfPageUp: key.NewBinding(
+			key.WithKeys("ctrl+u"),
+		),
+		HalfPageDown: key.NewBinding(
+			key.WithKeys("ctrl+d"),
+		),
+		Up: key.NewBinding(
+			key.WithKeys("up"),
+		),
+		Down: key.NewBinding(
+			key.WithKeys("down"),
+		),
+	}
 )
 
 type ChangeSceenMsg struct {

@@ -80,6 +80,7 @@ func (m threadModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
+			m.viewport.KeyMap = km
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
