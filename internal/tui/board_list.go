@@ -11,7 +11,7 @@ import (
 	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
-type threadsModel struct {
+type boardModel struct {
 	service forum.BoardService
 	board   forum.Board
 
@@ -20,14 +20,14 @@ type threadsModel struct {
 	ready    bool
 }
 
-var _ tea.Model = threadsModel{}
+var _ tea.Model = boardModel{}
 
-func newThreadsModel(service forum.BoardService) tea.Model {
+func newBoardModel(service forum.BoardService) tea.Model {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Focus()
 
-	m := threadsModel{
+	m := boardModel{
 		service: service,
 		input:   ti,
 	}
@@ -35,11 +35,11 @@ func newThreadsModel(service forum.BoardService) tea.Model {
 	return m
 }
 
-func (m threadsModel) Init() tea.Cmd {
+func (m boardModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m threadsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m boardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
@@ -47,7 +47,7 @@ func (m threadsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case ChangeSceenMsg:
-		if msg.Screen != screenThreads {
+		if msg.Screen != screenBoard {
 			break
 		}
 
@@ -60,7 +60,7 @@ func (m threadsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
-			return m, ChangeScreenCmd(screenBoards, 0)
+			return m, ChangeScreenCmd(screenBoardList, 0)
 		case "ctrl+c":
 			return m, tea.Quit
 		case "enter":
@@ -96,7 +96,7 @@ func (m threadsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m threadsModel) View() string {
+func (m boardModel) View() string {
 	return fmt.Sprintf(
 		"%s\n%s\n%s",
 		m.viewport.View(),
@@ -105,7 +105,7 @@ func (m threadsModel) View() string {
 	)
 }
 
-func (m threadsModel) bufferContents() string {
+func (m boardModel) bufferContents() string {
 	if !m.ready {
 		return "Initializing\n\n"
 	}

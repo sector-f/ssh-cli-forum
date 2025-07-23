@@ -12,7 +12,7 @@ import (
 	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
-type boardsModel struct {
+type boardListModel struct {
 	service forum.BoardService
 	list    []forum.BoardListing
 
@@ -21,9 +21,9 @@ type boardsModel struct {
 	ready    bool
 }
 
-var _ tea.Model = boardsModel{}
+var _ tea.Model = boardListModel{}
 
-func newBoardsModel(service forum.BoardService) tea.Model {
+func newBoardListModel(service forum.BoardService) tea.Model {
 	ti := textinput.New()
 	ti.Prompt = "> "
 	ti.Focus()
@@ -32,7 +32,7 @@ func newBoardsModel(service forum.BoardService) tea.Model {
 	// Error field on struct that gets displayed instead of list?
 	boards, _ := service.ListBoards()
 
-	m := boardsModel{
+	m := boardListModel{
 		service: service,
 		list:    boards,
 		input:   ti,
@@ -41,11 +41,11 @@ func newBoardsModel(service forum.BoardService) tea.Model {
 	return m
 }
 
-func (m boardsModel) Init() tea.Cmd {
+func (m boardListModel) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m boardsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m boardListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		cmd  tea.Cmd
 		cmds []tea.Cmd
@@ -84,7 +84,7 @@ func (m boardsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				selection := m.list[index-1]
-				return m, ChangeScreenCmd(screenThreads, selection.ID)
+				return m, ChangeScreenCmd(screenBoard, selection.ID)
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -112,7 +112,7 @@ func (m boardsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m boardsModel) View() string {
+func (m boardListModel) View() string {
 	return fmt.Sprintf(
 		"%s\n%s\n%s",
 		m.viewport.View(),
@@ -121,7 +121,7 @@ func (m boardsModel) View() string {
 	)
 }
 
-func (m boardsModel) bufferContents() string {
+func (m boardListModel) bufferContents() string {
 	if !m.ready {
 		return "Initializing\n\n"
 	}

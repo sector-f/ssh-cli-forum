@@ -58,7 +58,7 @@ func (m homeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			switch command {
 			case "boards":
-				return m, ChangeScreenCmd(screenBoards, 0)
+				return m, ChangeScreenCmd(screenBoardList, 0)
 			case "chat":
 				return m, ChangeScreenCmd(screenChat, 0)
 			case "exit", "quit":
