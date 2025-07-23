@@ -67,6 +67,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scrollback = append(m.scrollback, msg)
 
 		m.viewport.GotoBottom()
+		m.viewport.SetContent(m.bufferContents())
 	case ChangeSceenMsg:
 		if msg.Screen != screenChat {
 			break
@@ -79,6 +80,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.viewport.GotoBottom()
+		m.viewport.SetContent(m.bufferContents())
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -116,9 +118,8 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.viewport.GotoBottom()
+		m.viewport.SetContent(m.bufferContents())
 	}
-
-	m.viewport.SetContent(m.bufferContents())
 
 	m.viewport, cmd = m.viewport.Update(msg)
 	cmds = append(cmds, cmd)
