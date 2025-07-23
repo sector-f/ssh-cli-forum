@@ -94,8 +94,8 @@ func (m homeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m homeModel) View() string {
-	return fmt.Sprintf(
-		"%s\n%s\n%s",
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
 		m.viewport.View(),
 		strings.Repeat("─", max(0, m.viewport.Width)),
 		m.input.View(),

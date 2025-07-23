@@ -101,8 +101,8 @@ func (m threadModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m threadModel) View() string {
-	return fmt.Sprintf(
-		"%s\n%s\n%s",
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
 		m.viewport.View(),
 		strings.Repeat("─", max(0, m.viewport.Width)),
 		m.input.View(),

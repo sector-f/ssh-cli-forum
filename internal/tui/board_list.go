@@ -111,8 +111,8 @@ func (m boardListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m boardListModel) View() string {
-	return fmt.Sprintf(
-		"%s\n%s\n%s",
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
 		m.viewport.View(),
 		strings.Repeat("─", max(0, m.viewport.Width)),
 		m.input.View(),
