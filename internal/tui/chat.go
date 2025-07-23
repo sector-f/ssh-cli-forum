@@ -68,8 +68,13 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		atBottom := m.viewport.AtBottom()
 		m.viewport.SetContent(m.bufferContents())
 
+		isSelfMsg := false
+		if userMsg, ok := msg.(forum.ChatMsg); ok {
+			isSelfMsg = userMsg.Username == m.user
+		}
+
 		// Don't automatically scroll viewport down to show new message if user is scrolled up.
-		if atBottom {
+		if atBottom || isSelfMsg {
 			m.viewport.GotoBottom()
 		}
 	case ChangeSceenMsg:
@@ -109,7 +114,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.input.Width = msg.Width - lipgloss.Width(m.input.Prompt) - 1
-		verticalMarginHeight := lipgloss.Height(m.input.View()) + 2 + 3
+		verticalMarginHeight := lipgloss.Height(m.input.View()) + 1 + 3
 		m.width = msg.Width
 
 		if !m.ready {
