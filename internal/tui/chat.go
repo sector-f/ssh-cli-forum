@@ -36,15 +36,12 @@ func newChatModel(session ssh.Session, service forum.ChatroomService, callback f
 	ti.Prompt = "> "
 	ti.Focus()
 
-	msgs := service.ConnectUser(session, callback)
-
 	m := chatModel{
-		session:    session,
-		user:       session.User(),
-		service:    service,
-		input:      ti,
-		callback:   callback,
-		scrollback: msgs,
+		session:  session,
+		user:     session.User(),
+		service:  service,
+		input:    ti,
+		callback: callback,
 	}
 
 	return m
@@ -62,7 +59,22 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case forum.Message:
+		// Sanity check; we should never receive a forum.Message here if we aren't connected.
+		if !m.connected {
+			break
+		}
+
 		m.scrollback = append(m.scrollback, msg)
+	case ChangeSceenMsg:
+		if msg.Screen != screenChat {
+			break
+		}
+
+		// Connect to chat service the first time we change to this screen
+		if !m.connected {
+			m.scrollback = m.service.ConnectUser(m.session, m.callback)
+			m.connected = true
+		}
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
