@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,6 +31,27 @@ type chatModel struct {
 }
 
 var _ tea.Model = chatModel{}
+
+var km = viewport.KeyMap{
+	PageDown: key.NewBinding(
+		key.WithKeys("pgdown"),
+	),
+	PageUp: key.NewBinding(
+		key.WithKeys("pgup"),
+	),
+	HalfPageUp: key.NewBinding(
+		key.WithKeys("ctrl+u"),
+	),
+	HalfPageDown: key.NewBinding(
+		key.WithKeys("ctrl+d"),
+	),
+	Up: key.NewBinding(
+		key.WithKeys("up"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down"),
+	),
+}
 
 func newChatModel(session ssh.Session, service forum.ChatroomService, callback func(forum.Message)) tea.Model {
 	ti := textinput.New()
@@ -65,6 +87,8 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.scrollback = append(m.scrollback, msg)
+
+		m.viewport.GotoBottom()
 	case ChangeSceenMsg:
 		if msg.Screen != screenChat {
 			break
@@ -75,6 +99,8 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scrollback = m.service.ConnectUser(m.session, m.callback)
 			m.connected = true
 		}
+
+		m.viewport.GotoBottom()
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -104,16 +130,18 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width, msg.Height-verticalMarginHeight)
+			m.viewport.KeyMap = km
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width
 			m.viewport.Height = msg.Height - verticalMarginHeight
 		}
+
+		m.viewport.GotoBottom()
 	}
 
 	m.viewport.SetContent(m.bufferContents())
 
-	// Handle keyboard and mouse events in the viewport
 	m.viewport, cmd = m.viewport.Update(msg)
 	cmds = append(cmds, cmd)
 
