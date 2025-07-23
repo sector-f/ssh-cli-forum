@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -147,7 +146,7 @@ func (m rootModel) View() string {
 		return "Invalid screen"
 	}
 
-	return fmt.Sprintf("%s\n%s", m.headerView(), current.View())
+	return lipgloss.JoinVertical(lipgloss.Left, m.headerView(), current.View())
 }
 
 func NewProgram(sess ssh.Session, userService forum.UserService, boardService forum.BoardService, chatService forum.ChatroomService) *tea.Program {

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"bufio"
-	"fmt"
 	"strings"
 	"time"
 
@@ -66,8 +65,13 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.scrollback = append(m.scrollback, msg)
 
-		m.viewport.GotoBottom()
+		atBottom := m.viewport.AtBottom()
 		m.viewport.SetContent(m.bufferContents())
+
+		// Don't automatically scroll viewport down to show new message if user is scrolled up.
+		if atBottom {
+			m.viewport.GotoBottom()
+		}
 	case ChangeSceenMsg:
 		if msg.Screen != screenChat {
 			break
@@ -79,8 +83,8 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connected = true
 		}
 
-		m.viewport.GotoBottom()
 		m.viewport.SetContent(m.bufferContents())
+		m.viewport.GotoBottom()
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -105,7 +109,7 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.input.Width = msg.Width - lipgloss.Width(m.input.Prompt) - 1
-		verticalMarginHeight := lipgloss.Height(m.input.View()) + 1 + 3
+		verticalMarginHeight := lipgloss.Height(m.input.View()) + 2 + 3
 		m.width = msg.Width
 
 		if !m.ready {
@@ -117,8 +121,8 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Height = msg.Height - verticalMarginHeight
 		}
 
-		m.viewport.GotoBottom()
 		m.viewport.SetContent(m.bufferContents())
+		m.viewport.GotoBottom()
 	}
 
 	m.viewport, cmd = m.viewport.Update(msg)
@@ -131,8 +135,8 @@ func (m chatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m chatModel) View() string {
-	return fmt.Sprintf(
-		"%s\n%s\n%s",
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
 		m.viewport.View(),
 		strings.Repeat("─", max(0, m.viewport.Width)),
 		m.input.View(),
@@ -149,7 +153,7 @@ func (m chatModel) bufferContents() string {
 	// '12:34:56 '
 	prefixWidth := 9
 
-	for _, msg := range m.scrollback {
+	for i, msg := range m.scrollback {
 		timeStamp := msg.Time().Format(time.TimeOnly)
 		wrappedMsg := wordwrap.String(msg.Body(), m.width-prefixWidth)
 
@@ -161,7 +165,10 @@ func (m chatModel) bufferContents() string {
 			if lineNum > 0 {
 				sb.WriteString(strings.Repeat(" ", prefixWidth))
 			}
-			sb.WriteString(scanner.Text() + "\n")
+			sb.WriteString(scanner.Text())
+			if i < len(m.scrollback)-1 {
+				sb.WriteString("\n")
+			}
 			lineNum++
 		}
 	}
