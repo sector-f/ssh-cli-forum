@@ -68,24 +68,21 @@ func (m boardListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			args := strings.Fields(command)
-			switch args[0] {
-			case "show":
-				if len(args) != 2 {
-					break
-				}
-
-				index, err := strconv.Atoi(args[1])
-				if err != nil {
-					break
-				}
-
-				if index <= 0 || index > len(m.list) {
-					break
-				}
-
-				selection := m.list[index-1]
-				return m, ChangeScreenCmd(screenBoard, selection.ID)
+			if len(args) != 1 {
+				break
 			}
+
+			index, err := strconv.Atoi(args[0])
+			if err != nil {
+				break
+			}
+
+			if index <= 0 || index > len(m.list) {
+				break
+			}
+
+			selection := m.list[index-1]
+			return m, ChangeScreenCmd(screenBoard, selection.ID)
 		}
 	case tea.WindowSizeMsg:
 		m.input.Width = msg.Width - lipgloss.Width(m.input.Prompt) - 1
