@@ -481,6 +481,223 @@ func (m *sessionModel) currentPrompt() string {
 	}
 }
 
+func (m *sessionModel) addOutput(value string) {
+	for _, line := range strings.Split(strings.TrimRight(value, "\n"), "\n") {
+		// Forum content is untrusted terminal output. Strip control characters
+		// so posts cannot inject ANSI escape sequences into SSH clients.
+		line = strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return -1
+			}
+			return r
+		}, line)
+		m.output = append(m.output, line)
+	}
+	if len(m.output) > 1200 {
+		m.output = append([]string(nil), m.output[len(m.output)-1000:]...)
+	}
+}
+
+func (m *sessionModel) fail(err error) {
+	if err != nil {
+		m.addOutput("Error: " + err.Error())
+	}
+}
+
+func (m *sessionModel) execute(line string) (bool, tea.Cmd) {
+	args, err := splitCommand(line)
+	if err != nil {
+		m.fail(err)
+		return false, nil
+	}
+	if len(args) == 0 {
+		return false, nil
+	}
+
+	cmd, ok := lookupCommand(args[0])
+	if !ok {
+		m.addOutput("Unknown command: " + args[0] + ". Type 'help' for commands.")
+		return false, nil
+	}
+
+	cmdArgs := args[1:]
+	prefix := ""
+	requiredPermission := cmd.Permission
+	if len(cmd.Subcommands) > 0 {
+		if len(cmdArgs) == 0 {
+			if !m.hasPermission(requiredPermission) {
+				m.fail(service.ErrPermissionDenied)
+				return false, nil
+			}
+			m.addOutput("Usage: " + cmd.Name + " <subcommand>. Type 'help " + cmd.Name + "' for details.")
+			return false, nil
+		}
+
+		subcommand, found := lookupSubcommand(cmd, cmdArgs[0])
+		if !found {
+			m.addOutput("Unknown " + cmd.Name + " subcommand: " + cmdArgs[0] + ". Type 'help " + cmd.Name + "' for commands.")
+			return false, nil
+		}
+		requiredPermission = effectivePermission(cmd, subcommand)
+		prefix = cmd.Name
+		cmd = subcommand
+		cmdArgs = cmdArgs[1:]
+	}
+
+	if !m.hasPermission(requiredPermission) {
+		m.fail(service.ErrPermissionDenied)
+		return false, nil
+	}
+	if len(cmdArgs) < requiredArguments(cmd) {
+		m.addOutput("Usage: " + commandUsage(cmd, prefix))
+		return false, nil
+	}
+	if cmd.Handler == nil {
+		m.addOutput("Command is not available.")
+		return false, nil
+	}
+	return cmd.Handler(m, cmdArgs)
+}
+
+func (m *sessionModel) help(args []string) {
+	if len(args) > 2 {
+		m.addOutput("Usage: help [command [subcommand]]")
+		return
+	}
+
+	if len(args) == 0 {
+		for _, group := range commandGroupOrder {
+			var entries []string
+			for _, cmd := range commandRegistry() {
+				if cmd.Group != group || !m.hasPermission(cmd.Permission) {
+					continue
+				}
+				if len(cmd.Subcommands) > 0 {
+					for _, subcommand := range cmd.Subcommands {
+						if !m.hasPermission(effectivePermission(cmd, subcommand)) {
+							continue
+						}
+						entries = append(entries, fmt.Sprintf("  %-38s %s", commandUsage(subcommand, cmd.Name), subcommand.Description))
+					}
+					continue
+				}
+				entries = append(entries, fmt.Sprintf("  %-38s %s", commandUsage(cmd, ""), cmd.Description))
+			}
+			if len(entries) == 0 {
+				continue
+			}
+			m.addOutput(group + ":")
+			for _, entry := range entries {
+				m.addOutput(entry)
+			}
+			m.addOutput("")
+		}
+		m.addOutput("Use 'help <command>' for command details.")
+		return
+	}
+
+	cmd, ok := lookupCommand(args[0])
+	if !ok {
+		m.addOutput("No help available for '" + args[0] + "'.")
+		return
+	}
+	if !m.hasPermission(cmd.Permission) {
+		m.fail(service.ErrPermissionDenied)
+		return
+	}
+
+	if len(args) == 2 {
+		subcommand, found := lookupSubcommand(cmd, args[1])
+		if !found {
+			m.addOutput("No help available for '" + cmd.Name + " " + args[1] + "'.")
+			return
+		}
+		if !m.hasPermission(effectivePermission(cmd, subcommand)) {
+			m.fail(service.ErrPermissionDenied)
+			return
+		}
+		subcommand.Permission = effectivePermission(cmd, subcommand)
+		m.writeCommandHelp(subcommand, cmd.Name)
+		return
+	}
+
+	if len(cmd.Subcommands) > 0 {
+		m.addOutput(cmd.Name + " — " + cmd.Description)
+		m.addOutput("Usage: " + cmd.Name + " <subcommand>")
+		if cmd.Permission != permissionMember {
+			m.addOutput("Permission: " + commandPermissionName(cmd.Permission))
+		}
+		m.addOutput("Subcommands:")
+		for _, subcommand := range cmd.Subcommands {
+			if !m.hasPermission(effectivePermission(cmd, subcommand)) {
+				continue
+			}
+			m.addOutput(fmt.Sprintf("  %-36s %s", commandUsage(subcommand, cmd.Name), subcommand.Description))
+		}
+		return
+	}
+
+	m.writeCommandHelp(cmd, "")
+}
+
+func (m *sessionModel) writeCommandHelp(cmd command, prefix string) {
+	m.addOutput("Usage: " + commandUsage(cmd, prefix))
+	m.addOutput(cmd.Description)
+	if len(cmd.Aliases) > 0 {
+		m.addOutput("Aliases: " + strings.Join(cmd.Aliases, ", "))
+	}
+	if cmd.Permission != permissionMember {
+		m.addOutput("Permission: " + commandPermissionName(cmd.Permission))
+	}
+	for _, arg := range cmd.Arguments {
+		m.addOutput(fmt.Sprintf("  %s: %s", arg.Name, arg.Description))
+	}
+}
+
+func (m *sessionModel) listLocation(args []string) {
+	location := m.cwd
+	if len(args) > 1 {
+		m.addOutput("Usage: ls [path]")
+		return
+	}
+	if len(args) == 1 {
+		if strings.HasPrefix(args[0], "/") {
+			location = path.Clean(args[0])
+		} else {
+			location = path.Clean(path.Join(m.cwd, args[0]))
+		}
+	}
+	switch {
+	case location == "/":
+		m.addOutput("boards/\nrecent\nhelp")
+	case location == "/boards":
+		boards, err := m.boards.ListBoards(m.ctx)
+		if err != nil {
+			m.fail(err)
+			return
+		}
+		m.printBoards(boards)
+	case location == "/recent":
+		m.showRecent()
+	case strings.HasPrefix(location, "/boards/"):
+		parts := strings.Split(strings.TrimPrefix(location, "/boards/"), "/")
+		if len(parts) == 1 && parts[0] != "" {
+			m.printBoardTopics(parts[0], 1)
+		} else if len(parts) == 2 {
+			id, err := strconv.Atoi(parts[1])
+			if err != nil {
+				m.fail(service.ErrThreadNotFound)
+				return
+			}
+			m.displayThread(id, 1)
+		} else {
+			m.addOutput("No such location: " + location)
+		}
+	default:
+		m.addOutput("No such location: " + location)
+	}
+}
+
 func (m *sessionModel) printBoards(boards []service.BoardListing) {
 	if len(boards) == 0 {
 		m.addOutput("No boards have been created.")
