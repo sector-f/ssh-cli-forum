@@ -135,7 +135,7 @@ func commandRegistry() []command {
 			Handler:   commandCall(func(m *sessionModel, args []string) { m.deleteOwnTopic(args) }),
 		},
 		{
-			Name: "delete-reply", Group: "Posting", Description: "Delete a reply you authored (moderators may delete any reply).",
+			Name: "delete-reply", Group: "Posting", Description: "Delete a reply you authored.",
 			Arguments: []commandArgument{argument("reply-id", "Reply to delete.")},
 			Handler:   commandCall(func(m *sessionModel, args []string) { m.deleteOwnReply(args) }),
 		},
