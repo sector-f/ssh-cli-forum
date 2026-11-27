@@ -137,3 +137,31 @@ func (m *sessionModel) setAdminUserStatus(args []string, status string) {
 	}
 	m.addOutput("User updated.")
 }
+
+
+func (m *sessionModel) showModlog(args []string) {
+	entries, err := m.boards.ListModerationLog(m.ctx, 100)
+	if err != nil {
+		m.fail(err)
+		return
+	}
+	if len(entries) == 0 {
+		m.addOutput("No moderation actions recorded.")
+		return
+	}
+	for _, e := range entries {
+		m.addOutput(fmt.Sprintf("%s  %s  %s #%d  by %s  %s", e.CreatedAt.Format("2006-01-02 15:04"), e.Action, e.TargetType, e.TargetID, e.Actor.Username, e.Reason))
+	}
+}
+
+func (m *sessionModel) listUsers() {
+	users, err := m.users.ListUsers(m.ctx)
+	if err != nil {
+		m.fail(err)
+		return
+	}
+	m.addOutput("USERNAME              ROLE       STATUS")
+	for _, u := range users {
+		m.addOutput(fmt.Sprintf("%-21s %-10s %s", u.Username, u.Role, u.Status))
+	}
+}

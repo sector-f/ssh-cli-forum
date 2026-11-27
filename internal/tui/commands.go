@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
 type commandPermission uint8
