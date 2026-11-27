@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
 func (m *sessionModel) applyModeration(args []string, action func(int, string) error) {

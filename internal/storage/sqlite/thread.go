@@ -131,7 +131,7 @@ func (s *Store) DeleteThread(ctx context.Context, id, actorID int, reason string
 	if _, err := tx.ExecContext(ctx, "UPDATE threads SET deleted_at = ?, status = 'hidden', updated_at = ? WHERE id = ?", nowText(), nowText(), id); err != nil {
 		return err
 	}
-	if err := addModlog(tx, actorID, "thread_deleted", "thread", id, reason); err != nil {
+	if err := addModlog(ctx, tx, actorID, "thread_deleted", "thread", id, reason); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -158,7 +158,7 @@ func (s *Store) SetThreadPinned(ctx context.Context, id, actorID int, pinned boo
 	if pinned {
 		action = "thread_pinned"
 	}
-	if err := addModlog(tx, actorID, action, "thread", id, reason); err != nil {
+	if err := addModlog(ctx, tx, actorID, action, "thread", id, reason); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -181,7 +181,7 @@ func (s *Store) SetThreadStatus(ctx context.Context, id, actorID int, status, re
 	if n == 0 {
 		return service.ErrThreadNotFound
 	}
-	if err := addModlog(tx, actorID, "thread_"+status, "thread", id, reason); err != nil {
+	if err := addModlog(ctx, tx, actorID, "thread_"+status, "thread", id, reason); err != nil {
 		return err
 	}
 	return tx.Commit()

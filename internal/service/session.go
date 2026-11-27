@@ -174,6 +174,23 @@ func (s *Session) CreateThreadWithBody(ctx context.Context, title, body string, 
 	return s.BoardService.CreateThreadWithBody(ctx, title, body, boardID, user.ID)
 }
 
+func (s *Session) GetThreadByID(ctx context.Context, id int) (Thread, error) {
+	thread, err := s.BoardService.GetThreadByID(ctx, id)
+	if err != nil {
+		return Thread{}, err
+	}
+	if thread.Status == ThreadHidden {
+		user, err := s.actor(ctx)
+		if err != nil {
+			return Thread{}, err
+		}
+		if user.Role != RoleAdmin && user.Role != RoleModerator {
+			return Thread{}, ErrThreadNotFound
+		}
+	}
+	return thread, nil
+}
+
 func (s *Session) CreateComment(ctx context.Context, threadID, authorID int, body string) error {
 	user, err := s.requireActorID(ctx, authorID)
 	if err != nil {

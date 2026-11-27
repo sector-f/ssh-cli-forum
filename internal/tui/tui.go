@@ -816,10 +816,6 @@ func (m *sessionModel) displayThread(id, page int) {
 		m.fail(err)
 		return
 	}
-	if t.Status == service.ThreadHidden && !m.isModerator() {
-		m.addOutput("Topic not found.")
-		return
-	}
 	comments, total, err := m.boards.ListCommentsPage(m.ctx, id, page, 10)
 	if err != nil {
 		m.fail(err)

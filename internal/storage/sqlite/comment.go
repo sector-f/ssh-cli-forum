@@ -64,7 +64,7 @@ func (s *Store) ListCommentsPage(ctx context.Context, threadID, page, pageSize i
 }
 
 func (s *Store) UpdateComment(ctx context.Context, id int, body string) error {
-	_, err = s.db.ExecContext(ctx, "UPDATE comments SET body = ?, updated_at = ? WHERE id = ?", body, nowText(), id)
+	_, err := s.db.ExecContext(ctx, "UPDATE comments SET body = ?, updated_at = ? WHERE id = ?", body, nowText(), id)
 	return err
 }
 
@@ -85,7 +85,7 @@ func (s *Store) DeleteComment(ctx context.Context, id, actorID int, reason strin
 	if _, err := tx.ExecContext(ctx, "UPDATE comments SET deleted_at = ? WHERE id = ?", nowText(), id); err != nil {
 		return err
 	}
-	if err := addModlog(tx, actorID, "reply_deleted", "comment", id, reason); err != nil {
+	if err := addModlog(ctx, tx, actorID, "reply_deleted", "comment", id, reason); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE threads SET last_activity_at = ? WHERE id = ?", nowText(), threadID); err != nil {
@@ -140,7 +140,7 @@ func (s *Store) ListModerationLog(ctx context.Context, limit int) ([]service.Mod
 	return entries, rows.Err()
 }
 
-func addModlog(tx *sql.Tx, actorID int, action, targetType string, targetID int, reason string) error {
+func addModlog(ctx context.Context, tx *sql.Tx, actorID int, action, targetType string, targetID int, reason string) error {
 	_, err := tx.ExecContext(ctx, "INSERT INTO moderation_log (actor_id, action, target_type, target_id, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)",
 		actorID, action, targetType, targetID, reason, time.Now().UTC().Format(time.RFC3339Nano))
 	return err
