@@ -45,13 +45,8 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 	defer cancel()
 
 	for i := 0; i < 105; i++ {
-		kind := service.ChatMessageText
 		body := fmt.Sprintf("message %03d", i)
-		if i == 104 {
-			kind = service.ChatMessageAction
-			body = "waves"
-		}
-		if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, kind, body); err != nil {
+		if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, body); err != nil {
 			t.Fatalf("post message %d: %v", i, err)
 		}
 	}
@@ -72,11 +67,8 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 	if len(history) != 100 {
 		t.Fatalf("history length = %d, want 100", len(history))
 	}
-	if history[0].Text != "message 005" || history[99].Text != "waves" {
+	if history[0].Text != "message 005" || history[99].Text != "message 104" {
 		t.Fatalf("history is not the latest 100 messages in chronological order: first=%+v last=%+v", history[0], history[99])
-	}
-	if history[99].Kind != service.ChatMessageAction || history[99].Username != "alice" {
-		t.Fatalf("action message was not stored correctly: %+v", history[99])
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
@@ -107,7 +99,7 @@ func TestChatRejectsInvalidMessagesAndUnknownChannels(t *testing.T) {
 	userID := createChatTestUser(t, store)
 	session := service.NewSession(userID, store, store, service.NewChatService(store))
 
-	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, service.ChatMessageText, "   "); !errors.Is(err, service.ErrChatMessageEmpty) {
+	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, "   "); !errors.Is(err, service.ErrChatMessageEmpty) {
 		t.Fatalf("empty message error = %v", err)
 	}
 	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, service.ChatMessageText, "line one\nline two"); !errors.Is(err, service.ErrChatMessageInvalid) {
