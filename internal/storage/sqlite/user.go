@@ -49,7 +49,7 @@ func (s *Store) BootstrapAdmin(ctx context.Context, username string, pubKey []by
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO invites (code, created_at, expires_at, is_admin) VALUES (?, ?, ?, 1)", code, nowText(), "9999-12-31T23:59:59Z"); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO invites (code, created_at, expires_at) VALUES (?, ?, ?)", code, nowText(), "9999-12-31T23:59:59Z"); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO users (username, pubkey, invite_code, role, status, created_at)
