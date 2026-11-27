@@ -449,35 +449,10 @@ func (m *sessionModel) currentPrompt() string {
 	switch m.compose {
 	case composeNewTitle:
 		return "Topic title: "
-	case composeNewBody, composeReplyBody:
+	case composeNewBody, composeReplyBody, composeEditBody, composeEditReplyBody:
 		return "| "
-	case location == "/":
-		m.addOutput("boards/\nrecent\nhelp")
-	case location == "/boards":
-		boards, err := m.boards.ListBoards(m.ctx)
-		if err != nil {
-			m.fail(err)
-			return
-		}
-		m.printBoards(boards)
-	case location == "/recent":
-		m.showRecent()
-	case strings.HasPrefix(location, "/boards/"):
-		parts := strings.Split(strings.TrimPrefix(location, "/boards/"), "/")
-		if len(parts) == 1 && parts[0] != "" {
-			m.printBoardTopics(parts[0], 1)
-		} else if len(parts) == 2 {
-			id, err := strconv.Atoi(parts[1])
-			if err != nil {
-				m.fail(service.ErrThreadNotFound)
-				return
-			}
-			m.displayThread(id, 1)
-		} else {
-			m.addOutput("No such location: " + location)
-		}
 	default:
-		m.addOutput("No such location: " + location)
+		return m.prompt()
 	}
 }
 
