@@ -764,8 +764,13 @@ func (m *sessionModel) displayThread(id, page int) {
 		m.addOutput("Topic not found.")
 		return
 	}
+	comments, total, err := m.boards.ListCommentsPage(id, page, 10)
+	if err != nil {
+		m.fail(err)
+		return
+	}
 	m.addOutput(fmt.Sprintf("[%d] %s", t.ID, t.Title))
-	m.addOutput(fmt.Sprintf("Started by %s · %s · %d replies", t.Author.Username, t.CreatedAt.Format("2006-01-02 15:04"), len(t.Comments)))
+	m.addOutput(fmt.Sprintf("Started by %s · %s · %d replies", t.Author.Username, t.CreatedAt.Format("2006-01-02 15:04"), total))
 	if t.IsPinned {
 		m.addOutput("PINNED")
 	}
@@ -776,11 +781,6 @@ func (m *sessionModel) displayThread(id, page int) {
 	m.addOutput(t.Author.Username + ":")
 	m.addOutput(t.Body)
 	m.addOutput(strings.Repeat("-", 72))
-	comments, total, err := m.boards.ListCommentsPage(id, page, 10)
-	if err != nil {
-		m.fail(err)
-		return
-	}
 	for _, c := range comments {
 		m.addOutput(fmt.Sprintf("%s · %s", c.Author.Username, c.PostedAt.Format("2006-01-02 15:04")))
 		m.addOutput(c.Body)
@@ -983,25 +983,23 @@ func (m *sessionModel) startEditReply(args []string) {
 		m.fail(errors.New("edit-reply must be run from inside a topic"))
 		return
 	}
-	comments, err := m.boards.ListComments(threadID)
+	comment, err := m.boards.GetCommentByID(id)
 	if err != nil {
 		m.fail(err)
 		return
 	}
-	for _, c := range comments {
-		if c.ID == id {
-			if c.Author.ID != m.user.ID && !m.isModerator() {
-				m.fail(service.ErrPermissionDenied)
-				return
-			}
-			m.compose, m.draftThreadID, m.draftReplyID = composeEditReplyBody, threadID, id
-			m.draftLines = nil
-			m.addOutput("Enter the replacement reply. Finish with '.'; /cancel aborts.")
-			m.input.Prompt = m.currentPrompt()
-			return
-		}
+	if comment.ThreadID != threadID {
+		m.fail(service.ErrCommentNotFound)
+		return
 	}
-	m.fail(service.ErrCommentNotFound)
+	if comment.Author.ID != m.user.ID && !m.isModerator() {
+		m.fail(service.ErrPermissionDenied)
+		return
+	}
+	m.compose, m.draftThreadID, m.draftReplyID = composeEditReplyBody, threadID, id
+	m.draftLines = nil
+	m.addOutput("Enter the replacement reply. Finish with '.'; /cancel aborts.")
+	m.input.Prompt = m.currentPrompt()
 }
 
 func (m *sessionModel) handleComposition(line string) {

@@ -68,8 +68,7 @@ func (s *Service) getBoard(column string, value interface{}) (service.Board, err
 	if err != nil {
 		return service.Board{}, err
 	}
-	b.Threads, err = s.ListThreads(b.ID)
-	return b, err
+	return b, nil
 }
 
 func (s *Service) UpdateBoard(slug, name, description string) error {

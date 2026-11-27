@@ -55,11 +55,11 @@ type Board struct {
 	Name        string
 	Description string
 	Status      string
-	Threads     []ThreadListing
 }
 
 type ThreadListing struct {
 	ID             int
+	BoardID        int
 	Title          string
 	Author         User
 	Body           string
@@ -67,6 +67,7 @@ type ThreadListing struct {
 	IsPinned       bool
 	Status         string
 	CreatedAt      time.Time
+	UpdatedAt      time.Time
 	LastActivityAt time.Time
 }
 
@@ -81,7 +82,6 @@ type Thread struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	LastActivityAt time.Time
-	Comments       []Comment
 }
 
 type Comment struct {

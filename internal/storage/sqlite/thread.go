@@ -28,7 +28,7 @@ func (s *Service) CreateThreadWithBody(title, body string, boardID, authorID int
 	return int(id), err
 }
 
-const threadSelect = `SELECT t.id, t.title, t.board_id, t.author_id, t.body, t.is_pinned, t.status,
+const threadSelect = `SELECT t.id, t.title, t.board_id, t.body, t.is_pinned, t.status,
 	t.created_at, t.updated_at, t.last_activity_at,
 	u.username, u.display_name, u.role, u.status, u.is_admin, u.id, u.created_at, u.last_seen_at,
 	(SELECT COUNT(*) FROM comments c WHERE c.thread_id = t.id AND c.deleted_at IS NULL)
@@ -36,24 +36,23 @@ const threadSelect = `SELECT t.id, t.title, t.board_id, t.author_id, t.body, t.i
 
 func scanThreadListing(row interface{ Scan(...interface{}) error }) (service.ThreadListing, error) {
 	var t service.ThreadListing
-	var boardID, authorID int
+	var boardID int
 	var created, updated, activity, userCreated, userLast sql.NullString
 	var role, userStatus, display string
 	var isAdmin, pinned bool
 	var authorIDDB int
-	err := row.Scan(&t.ID, &t.Title, &boardID, &authorID, &t.Body, &pinned, &t.Status,
+	err := row.Scan(&t.ID, &t.Title, &boardID, &t.Body, &pinned, &t.Status,
 		&created, &updated, &activity, &t.Author.Username, &display, &role, &userStatus, &isAdmin,
 		&authorIDDB, &userCreated, &userLast, &t.ReplyCount)
 	if err != nil {
 		return service.ThreadListing{}, err
 	}
+	t.BoardID = boardID
 	t.IsPinned = pinned
-	t.CreatedAt, t.LastActivityAt = parseTime(created.String), parseTime(activity.String)
+	t.CreatedAt, t.UpdatedAt, t.LastActivityAt = parseTime(created.String), parseTime(updated.String), parseTime(activity.String)
 	t.Author.ID, t.Author.DisplayName, t.Author.Role, t.Author.Status = authorIDDB, display, role, userStatus
 	t.Author.IsAdmin = isAdmin || role == service.RoleAdmin
 	t.Author.CreatedAt, t.Author.LastSeenAt = parseTime(userCreated.String), parseTime(userLast.String)
-	_ = authorID
-	_ = updated
 	return t, nil
 }
 
@@ -66,20 +65,11 @@ func (s *Service) GetThreadByID(id int) (service.Thread, error) {
 	if err != nil {
 		return service.Thread{}, err
 	}
-	var boardID int
-	var updated sql.NullString
-	if err := s.db.QueryRow("SELECT board_id, updated_at FROM threads WHERE id = ?", id).Scan(&boardID, &updated); err != nil {
-		return service.Thread{}, err
-	}
-	comments, err := s.ListComments(id)
-	if err != nil {
-		return service.Thread{}, err
-	}
 	return service.Thread{
-		ID: listing.ID, BoardID: boardID, Title: listing.Title, Author: listing.Author,
+		ID: listing.ID, BoardID: listing.BoardID, Title: listing.Title, Author: listing.Author,
 		Body: listing.Body, IsPinned: listing.IsPinned, Status: listing.Status,
-		CreatedAt: listing.CreatedAt, UpdatedAt: parseTime(updated.String),
-		LastActivityAt: listing.LastActivityAt, Comments: comments,
+		CreatedAt: listing.CreatedAt, UpdatedAt: listing.UpdatedAt,
+		LastActivityAt: listing.LastActivityAt,
 	}, nil
 }
 

@@ -66,8 +66,15 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if thread.Body != "Original body" || len(thread.Comments) != 1 || thread.Comments[0].Body != "Legacy reply" {
-		t.Fatalf("legacy topic data was not preserved: %+v", thread)
+	if thread.Body != "Original body" {
+		t.Fatalf("legacy topic body was not preserved: %+v", thread)
+	}
+	comments, total, err := store.ListCommentsPage(thread.ID, 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(comments) != 1 || comments[0].Body != "Legacy reply" {
+		t.Fatalf("legacy reply data was not preserved: total=%d comments=%+v", total, comments)
 	}
 }
 
