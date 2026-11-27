@@ -11,7 +11,6 @@ import (
 const SignupUsername = "signup"
 
 var (
-
 	ErrUserExists       = errors.New("username already exists")
 	ErrUsernameInvalid  = errors.New("username is not valid")
 	ErrUsernameTooShort = errors.New("username is too short")

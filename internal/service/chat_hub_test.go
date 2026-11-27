@@ -4,11 +4,10 @@ import (
 	"context"
 	"testing"
 	"time"
-
 )
 
 func TestHubPublishesOnlyToMatchingChannel(t *testing.T) {
-	hub := NewHub()
+	hub := NewChatHub()
 	global, cancelGlobal := hub.Subscribe(context.Background(), GlobalChatChannel)
 	defer cancelGlobal()
 	other, cancelOther := hub.Subscribe(context.Background(), "development")
@@ -34,7 +33,7 @@ func TestHubPublishesOnlyToMatchingChannel(t *testing.T) {
 }
 
 func TestHubCancelClosesSubscriptionAndContextCancels(t *testing.T) {
-	hub := NewHub()
+	hub := NewChatHub()
 	ctx, cancelContext := context.WithCancel(context.Background())
 	events, cancel := hub.Subscribe(ctx, GlobalChatChannel)
 	cancel()
