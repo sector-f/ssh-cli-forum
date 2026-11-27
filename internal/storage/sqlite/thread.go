@@ -24,7 +24,7 @@ func (s *Store) CreateThreadWithBody(title, body string, boardID, authorID int) 
 
 const threadSelect = `SELECT t.id, t.title, t.board_id, t.body, t.is_pinned, t.status,
 	t.created_at, t.updated_at, t.last_activity_at,
-	u.username, u.display_name, u.role, u.status, u.is_admin, u.id, u.created_at, u.last_seen_at,
+	u.username, u.display_name, u.role, u.status, u.id, u.created_at, u.last_seen_at,
 	(SELECT COUNT(*) FROM comments c WHERE c.thread_id = t.id AND c.deleted_at IS NULL)
 	FROM threads t JOIN users u ON u.id = t.author_id`
 
@@ -33,10 +33,10 @@ func scanThreadListing(row interface{ Scan(...interface{}) error }) (service.Thr
 	var boardID int
 	var created, updated, activity, userCreated, userLast sql.NullString
 	var role, userStatus, display string
-	var isAdmin, pinned bool
+	var pinned bool
 	var authorIDDB int
 	err := row.Scan(&t.ID, &t.Title, &boardID, &t.Body, &pinned, &t.Status,
-		&created, &updated, &activity, &t.Author.Username, &display, &role, &userStatus, &isAdmin,
+		&created, &updated, &activity, &t.Author.Username, &display, &role, &userStatus,
 		&authorIDDB, &userCreated, &userLast, &t.ReplyCount)
 	if err != nil {
 		return service.ThreadListing{}, err
@@ -45,7 +45,6 @@ func scanThreadListing(row interface{ Scan(...interface{}) error }) (service.Thr
 	t.IsPinned = pinned
 	t.CreatedAt, t.UpdatedAt, t.LastActivityAt = parseTime(created.String), parseTime(updated.String), parseTime(activity.String)
 	t.Author.ID, t.Author.DisplayName, t.Author.Role, t.Author.Status = authorIDDB, display, role, userStatus
-	t.Author.IsAdmin = isAdmin || role == service.RoleAdmin
 	t.Author.CreatedAt, t.Author.LastSeenAt = parseTime(userCreated.String), parseTime(userLast.String)
 	return t, nil
 }

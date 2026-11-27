@@ -14,9 +14,9 @@ func (s *Store) CreateUser(username string, pubKey []byte, inviteCode, role stri
 	if len(pubKey) == 0 {
 		return fmt.Errorf("public key is required")
 	}
-	_, err := s.db.Exec(`INSERT INTO users (username, pubkey, invite_code, is_admin, role, status, created_at)
-		VALUES (?, ?, ?, ?, ?, 'active', ?)`,
-		username, pubKey, inviteCode, role == service.RoleAdmin, role, nowText())
+	_, err := s.db.Exec(`INSERT INTO users (username, pubkey, invite_code, role, status, created_at)
+		VALUES (?, ?, ?, ?, 'active', ?)`,
+		username, pubKey, inviteCode, role, nowText())
 	if err != nil && isUniqueConstraint(err) {
 		var exists int
 		if lookupErr := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE username = ? COLLATE NOCASE)", username).Scan(&exists); lookupErr != nil {
@@ -51,8 +51,8 @@ func (s *Store) BootstrapAdmin(username string, pubKey []byte) error {
 	if _, err := tx.Exec("INSERT INTO invites (code, created_at, expires_at, is_admin) VALUES (?, ?, ?, 1)", code, nowText(), "9999-12-31T23:59:59Z"); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO users (username, pubkey, invite_code, is_admin, role, status, created_at)
-		VALUES (?, ?, ?, 1, 'admin', 'active', ?)`, username, pubKey, code, nowText()); err != nil {
+	if _, err := tx.Exec(`INSERT INTO users (username, pubkey, invite_code, role, status, created_at)
+		VALUES (?, ?, ?, 'admin', 'active', ?)`, username, pubKey, code, nowText()); err != nil {
 		if isUniqueConstraint(err) {
 			var exists int
 			if lookupErr := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE username = ? COLLATE NOCASE)", username).Scan(&exists); lookupErr != nil {
@@ -75,25 +75,18 @@ func (s *Store) GetUserByUsername(username string) (service.User, error) {
 	return scanUser(s.db.QueryRow(userSelect+" WHERE username = ? COLLATE NOCASE", username))
 }
 
-const userSelect = `SELECT id, username, display_name, role, status, is_admin, created_at, last_seen_at FROM users`
+const userSelect = `SELECT id, username, display_name, role, status, created_at, last_seen_at FROM users`
 
 func scanUser(row *sql.Row) (service.User, error) {
 	var u service.User
 	var created, last sql.NullString
-	if err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Status, &u.IsAdmin, &created, &last); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Status, &created, &last); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return service.User{}, service.ErrUserNotFound
 		}
 		return service.User{}, err
 	}
 	u.CreatedAt, u.LastSeenAt = parseTime(created.String), parseTime(last.String)
-	if u.Role == "" {
-		u.Role = service.RoleMember
-		if u.IsAdmin {
-			u.Role = service.RoleAdmin
-		}
-	}
-	u.IsAdmin = u.Role == service.RoleAdmin || u.IsAdmin
 	return u, nil
 }
 
@@ -129,24 +122,17 @@ func (s *Store) ListUsers() ([]service.User, error) {
 	for rows.Next() {
 		var u service.User
 		var created, last sql.NullString
-		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Status, &u.IsAdmin, &created, &last); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Status, &created, &last); err != nil {
 			return nil, err
 		}
 		u.CreatedAt, u.LastSeenAt = parseTime(created.String), parseTime(last.String)
-		if u.Role == "" {
-			u.Role = service.RoleMember
-			if u.IsAdmin {
-				u.Role = service.RoleAdmin
-			}
-		}
-		u.IsAdmin = u.Role == service.RoleAdmin || u.IsAdmin
 		users = append(users, u)
 	}
 	return users, rows.Err()
 }
 
 func (s *Store) SetUserRole(username, role string) error {
-	res, err := s.db.Exec("UPDATE users SET role = ?, is_admin = ? WHERE username = ? COLLATE NOCASE", role, role == service.RoleAdmin, username)
+	res, err := s.db.Exec("UPDATE users SET role = ? WHERE username = ? COLLATE NOCASE", role, username)
 	if err != nil {
 		return err
 	}

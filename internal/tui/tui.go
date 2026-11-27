@@ -1379,9 +1379,9 @@ func (m *sessionModel) userAdmin(args []string) {
 }
 
 func (m *sessionModel) isModerator() bool {
-	return m.user.Role == service.RoleModerator || m.user.Role == service.RoleAdmin || m.user.IsAdmin
+	return m.user.Role == service.RoleModerator || m.user.Role == service.RoleAdmin
 }
-func (m *sessionModel) isAdmin() bool { return m.user.Role == service.RoleAdmin || m.user.IsAdmin }
+func (m *sessionModel) isAdmin() bool { return m.user.Role == service.RoleAdmin }
 
 func (m *sessionModel) targetID(args []string) (int, error) {
 	if len(args) == 1 {

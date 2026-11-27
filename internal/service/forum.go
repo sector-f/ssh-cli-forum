@@ -35,7 +35,6 @@ type User struct {
 	DisplayName string
 	Role        string
 	Status      string
-	IsAdmin     bool // Retained for compatibility with the original model.
 	CreatedAt   time.Time
 	LastSeenAt  time.Time
 }

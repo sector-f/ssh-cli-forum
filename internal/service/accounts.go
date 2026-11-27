@@ -76,7 +76,7 @@ func (s *AccountService) BootstrapAdmin(username string, pubKey []byte) error {
 		return err
 	}
 	for _, user := range users {
-		if user.Role == RoleAdmin || user.IsAdmin {
+		if user.Role == RoleAdmin {
 			return ErrAdminExists
 		}
 	}
@@ -101,14 +101,14 @@ func (s *AccountService) SetUserRole(username, role string) error {
 	if err != nil {
 		return err
 	}
-	if (target.Role == RoleAdmin || target.IsAdmin) && role != RoleAdmin {
+	if (target.Role == RoleAdmin) && role != RoleAdmin {
 		users, err := s.users.ListUsers()
 		if err != nil {
 			return err
 		}
 		admins := 0
 		for _, user := range users {
-			if user.Role == RoleAdmin || user.IsAdmin {
+			if user.Role == RoleAdmin {
 				admins++
 			}
 		}
@@ -127,14 +127,14 @@ func (s *AccountService) SetUserStatus(username, status string) error {
 	if err != nil {
 		return err
 	}
-	if (target.Role == RoleAdmin || target.IsAdmin) && status == StatusSuspended {
+	if (target.Role == RoleAdmin) && status == StatusSuspended {
 		users, err := s.users.ListUsers()
 		if err != nil {
 			return err
 		}
 		activeAdmins := 0
 		for _, user := range users {
-			if (user.Role == RoleAdmin || user.IsAdmin) && user.Status != StatusSuspended {
+			if (user.Role == RoleAdmin) && user.Status != StatusSuspended {
 				activeAdmins++
 			}
 		}

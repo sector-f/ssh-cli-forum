@@ -36,6 +36,7 @@ type schemaMigration struct {
 var migrations = []schemaMigration{
 	{version: 1, apply: createSchema},
 	{version: 2, apply: upgradeSchema},
+	{version: 3, apply: removeLegacyAdminFlag},
 }
 
 // Migrate applies pending schema migrations in order. Each migration and its
@@ -346,6 +347,18 @@ func upgradeSchema(tx *sql.Tx) error {
 		return err
 	}
 	return nil
+}
+
+func removeLegacyAdminFlag(tx *sql.Tx) error {
+	exists, err := hasColumn(tx, "users", "is_admin")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	_, err = tx.Exec("ALTER TABLE users DROP COLUMN is_admin")
+	return err
 }
 
 func hasColumn(tx *sql.Tx, table, column string) (bool, error) {

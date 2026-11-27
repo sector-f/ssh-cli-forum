@@ -48,7 +48,7 @@ func (s *Session) requireModerator() (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	if !user.IsAdmin && user.Role != RoleModerator && user.Role != RoleAdmin {
+	if user.Role != RoleModerator && user.Role != RoleAdmin {
 		return User{}, ErrPermissionDenied
 	}
 	return user, nil
@@ -59,7 +59,7 @@ func (s *Session) requireAdmin() (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	if !user.IsAdmin && user.Role != RoleAdmin {
+	if user.Role != RoleAdmin {
 		return User{}, ErrPermissionDenied
 	}
 	return user, nil
@@ -216,7 +216,7 @@ func (s *Session) UpdateThread(id, actorID int, title, body string, _ bool) erro
 	if err != nil {
 		return err
 	}
-	moderator := user.IsAdmin || user.Role == RoleAdmin || user.Role == RoleModerator
+	moderator := user.Role == RoleAdmin || user.Role == RoleModerator
 	if thread.Author.ID != user.ID && !moderator {
 		return ErrPermissionDenied
 	}
@@ -232,7 +232,7 @@ func (s *Session) DeleteThread(id, actorID int, _ bool, reason string) error {
 	if err != nil {
 		return err
 	}
-	moderator := user.IsAdmin || user.Role == RoleAdmin || user.Role == RoleModerator
+	moderator := user.Role == RoleAdmin || user.Role == RoleModerator
 	if thread.Author.ID != user.ID && !moderator {
 		return ErrPermissionDenied
 	}
@@ -244,7 +244,7 @@ func (s *Session) SetThreadPinned(id, actorID int, pinned bool, reason string) e
 	if err != nil {
 		return err
 	}
-	if !user.IsAdmin && user.Role != RoleAdmin && user.Role != RoleModerator {
+	if user.Role != RoleAdmin && user.Role != RoleModerator {
 		return ErrPermissionDenied
 	}
 	return s.BoardService.SetThreadPinned(id, user.ID, pinned, reason)
@@ -258,7 +258,7 @@ func (s *Session) SetThreadStatus(id, actorID int, status, reason string) error 
 	if err != nil {
 		return err
 	}
-	if !user.IsAdmin && user.Role != RoleAdmin && user.Role != RoleModerator {
+	if user.Role != RoleAdmin && user.Role != RoleModerator {
 		return ErrPermissionDenied
 	}
 	return s.BoardService.SetThreadStatus(id, user.ID, status, reason)
@@ -277,7 +277,7 @@ func (s *Session) UpdateComment(id, actorID int, body string, _ bool) error {
 	if err != nil {
 		return err
 	}
-	moderator := user.IsAdmin || user.Role == RoleAdmin || user.Role == RoleModerator
+	moderator := user.Role == RoleAdmin || user.Role == RoleModerator
 	if comment.Author.ID != user.ID && !moderator {
 		return ErrPermissionDenied
 	}
@@ -293,7 +293,7 @@ func (s *Session) DeleteComment(id, actorID int, _ bool, reason string) error {
 	if err != nil {
 		return err
 	}
-	moderator := user.IsAdmin || user.Role == RoleAdmin || user.Role == RoleModerator
+	moderator := user.Role == RoleAdmin || user.Role == RoleModerator
 	if comment.Author.ID != user.ID && !moderator {
 		return ErrPermissionDenied
 	}

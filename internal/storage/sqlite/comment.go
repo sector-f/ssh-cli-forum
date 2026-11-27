@@ -50,7 +50,7 @@ func (s *Store) ListCommentsPage(threadID, page, pageSize int) ([]service.Commen
 		return nil, 0, err
 	}
 	rows, err := s.db.Query(`SELECT c.id, c.thread_id, c.author_id, c.body, c.posted_at,
-		u.username, u.display_name, u.role, u.status, u.is_admin, u.created_at, u.last_seen_at
+		u.username, u.display_name, u.role, u.status, u.created_at, u.last_seen_at
 		FROM comments c JOIN users u ON u.id = c.author_id
 		WHERE c.thread_id = ? AND c.deleted_at IS NULL
 		ORDER BY c.posted_at ASC, c.id ASC LIMIT ? OFFSET ?`, threadID, pageSize, (page-1)*pageSize)
@@ -64,14 +64,12 @@ func (s *Store) ListCommentsPage(threadID, page, pageSize int) ([]service.Commen
 		var authorID int
 		var posted, created, last sql.NullString
 		var display, role, status string
-		var isAdmin bool
 		if err := rows.Scan(&c.ID, &c.ThreadID, &authorID, &c.Body, &posted,
-			&c.Author.Username, &display, &role, &status, &isAdmin, &created, &last); err != nil {
+			&c.Author.Username, &display, &role, &status, &created, &last); err != nil {
 			return nil, 0, err
 		}
 		c.PostedAt = parseTime(posted.String)
 		c.Author.ID, c.Author.DisplayName, c.Author.Role, c.Author.Status = authorID, display, role, status
-		c.Author.IsAdmin = isAdmin || role == service.RoleAdmin
 		c.Author.CreatedAt, c.Author.LastSeenAt = parseTime(created.String), parseTime(last.String)
 		comments = append(comments, c)
 	}
@@ -116,13 +114,12 @@ func (s *Store) GetCommentByID(id int) (service.Comment, error) {
 	var authorID int
 	var posted, updated, created, last sql.NullString
 	var display, role, status string
-	var isAdmin bool
 	err := s.db.QueryRow(`SELECT c.id, c.thread_id, c.author_id, c.body, c.posted_at, c.updated_at,
-		u.username, u.display_name, u.role, u.status, u.is_admin, u.created_at, u.last_seen_at
+		u.username, u.display_name, u.role, u.status, u.created_at, u.last_seen_at
 		FROM comments c JOIN users u ON u.id = c.author_id
 		WHERE c.id = ? AND c.deleted_at IS NULL`, id).Scan(
 		&c.ID, &c.ThreadID, &authorID, &c.Body, &posted, &updated,
-		&c.Author.Username, &display, &role, &status, &isAdmin, &created, &last)
+		&c.Author.Username, &display, &role, &status, &created, &last)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.Comment{}, service.ErrCommentNotFound
 	}
@@ -131,7 +128,6 @@ func (s *Store) GetCommentByID(id int) (service.Comment, error) {
 	}
 	c.PostedAt, c.UpdatedAt = parseTime(posted.String), parseTime(updated.String)
 	c.Author.ID, c.Author.DisplayName, c.Author.Role, c.Author.Status = authorID, display, role, status
-	c.Author.IsAdmin = isAdmin || role == service.RoleAdmin
 	c.Author.CreatedAt, c.Author.LastSeenAt = parseTime(created.String), parseTime(last.String)
 	return c, nil
 }
