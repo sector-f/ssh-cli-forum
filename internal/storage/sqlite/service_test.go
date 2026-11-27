@@ -126,7 +126,7 @@ func TestForumWriteOperations(t *testing.T) {
 		t.Fatalf("expected locked topic error, got %v", err)
 	}
 
-	if err := appSession.DeleteThread(context.Background(), id, 1, false, ""); err != nil {
+	if err := appSession.DeleteThread(context.Background(), id, 1, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := appSession.SetThreadStatus(context.Background(), id, 1, service.ThreadOpen, "restore"); err != nil {

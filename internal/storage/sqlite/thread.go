@@ -136,12 +136,12 @@ func (s *Store) RecentThreads(ctx context.Context, limit int) ([]service.ThreadL
 	return threads, rows.Err()
 }
 
-func (s *Store) UpdateThread(ctx context.Context, id, actorID int, title, body string, _ bool) error {
+func (s *Store) UpdateThread(ctx context.Context, id int, title, body string) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE threads SET title = ?, body = ?, updated_at = ? WHERE id = ?", title, body, nowText(), id)
 	return err
 }
 
-func (s *Store) DeleteThread(ctx context.Context, id, actorID int, moderator bool, reason string) error {
+func (s *Store) DeleteThread(ctx context.Context, id, actorID int, reason string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -150,10 +150,8 @@ func (s *Store) DeleteThread(ctx context.Context, id, actorID int, moderator boo
 	if _, err := tx.ExecContext(ctx, "UPDATE threads SET deleted_at = ?, status = 'hidden', updated_at = ? WHERE id = ?", nowText(), nowText(), id); err != nil {
 		return err
 	}
-	if moderator {
-		if err := addModlog(tx, actorID, "thread_deleted", "thread", id, reason); err != nil {
-			return err
-		}
+	if err := addModlog(tx, actorID, "thread_deleted", "thread", id, reason); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

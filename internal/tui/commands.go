@@ -265,7 +265,7 @@ func moderationPinHandler(pinned bool) commandHandler {
 func moderationDeleteHandler() commandHandler {
 	return commandCall(func(m *sessionModel, args []string) {
 		m.applyModeration(args, func(id int, reason string) error {
-			return m.boards.DeleteThread(m.ctx, id, m.user.ID, true, reason)
+			return m.boards.DeleteThread(m.ctx, id, m.user.ID, reason)
 		})
 	})
 }

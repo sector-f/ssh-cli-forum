@@ -77,15 +77,15 @@ type BoardService interface {
 	CreateThreadWithBody(ctx context.Context, title, body string, boardID, authorID int) (int, error)
 	ListThreadsPage(ctx context.Context, boardID, page, pageSize int) ([]ThreadListing, int, error)
 	RecentThreads(ctx context.Context, limit int) ([]ThreadListing, error)
-	UpdateThread(ctx context.Context, id, actorID int, title, body string, moderator bool) error
-	DeleteThread(ctx context.Context, id, actorID int, moderator bool, reason string) error
+	UpdateThread(ctx context.Context, id int, title, body string) error
+	DeleteThread(ctx context.Context, id, actorID int, reason string) error
 	SetThreadPinned(ctx context.Context, id, actorID int, pinned bool, reason string) error
 	SetThreadStatus(ctx context.Context, id, actorID int, status, reason string) error
 
 	ListCommentsPage(ctx context.Context, threadID, page, pageSize int) ([]Comment, int, error)
 	GetCommentByID(ctx context.Context, id int) (Comment, error)
-	UpdateComment(ctx context.Context, id, actorID int, body string, moderator bool) error
-	DeleteComment(ctx context.Context, id, actorID int, moderator bool, reason string) error
+	UpdateComment(ctx context.Context, id int, body string) error
+	DeleteComment(ctx context.Context, id, actorID int, reason string) error
 	ListModerationLog(ctx context.Context, limit int) ([]ModerationEntry, error)
 }
 

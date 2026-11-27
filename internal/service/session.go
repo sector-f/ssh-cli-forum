@@ -203,7 +203,7 @@ func (s *Session) CreateComment(ctx context.Context, threadID, authorID int, bod
 	return s.BoardService.CreateComment(ctx, threadID, user.ID, body)
 }
 
-func (s *Session) UpdateThread(ctx context.Context, id, actorID int, title, body string, _ bool) error {
+func (s *Session) UpdateThread(ctx context.Context, id, actorID int, title, body string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return ErrEmptyThreadTitle
@@ -220,10 +220,10 @@ func (s *Session) UpdateThread(ctx context.Context, id, actorID int, title, body
 	if thread.Author.ID != user.ID && !moderator {
 		return ErrPermissionDenied
 	}
-	return s.BoardService.UpdateThread(ctx, id, user.ID, title, body, moderator)
+	return s.BoardService.UpdateThread(ctx, id, title, body)
 }
 
-func (s *Session) DeleteThread(ctx context.Context, id, actorID int, _ bool, reason string) error {
+func (s *Session) DeleteThread(ctx context.Context, id, actorID int, reason string) error {
 	user, err := s.requireActorID(ctx, actorID)
 	if err != nil {
 		return err
@@ -236,7 +236,7 @@ func (s *Session) DeleteThread(ctx context.Context, id, actorID int, _ bool, rea
 	if thread.Author.ID != user.ID && !moderator {
 		return ErrPermissionDenied
 	}
-	return s.BoardService.DeleteThread(ctx, id, user.ID, moderator, reason)
+	return s.BoardService.DeleteThread(ctx, id, user.ID, reason)
 }
 
 func (s *Session) SetThreadPinned(ctx context.Context, id, actorID int, pinned bool, reason string) error {
@@ -264,7 +264,7 @@ func (s *Session) SetThreadStatus(ctx context.Context, id, actorID int, status, 
 	return s.BoardService.SetThreadStatus(ctx, id, user.ID, status, reason)
 }
 
-func (s *Session) UpdateComment(ctx context.Context, id, actorID int, body string, _ bool) error {
+func (s *Session) UpdateComment(ctx context.Context, id, actorID int, body string) error {
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return ErrEmptyCommentBody
@@ -281,10 +281,10 @@ func (s *Session) UpdateComment(ctx context.Context, id, actorID int, body strin
 	if comment.Author.ID != user.ID && !moderator {
 		return ErrPermissionDenied
 	}
-	return s.BoardService.UpdateComment(ctx, id, user.ID, body, moderator)
+	return s.BoardService.UpdateComment(ctx, id, body)
 }
 
-func (s *Session) DeleteComment(ctx context.Context, id, actorID int, _ bool, reason string) error {
+func (s *Session) DeleteComment(ctx context.Context, id, actorID int, reason string) error {
 	user, err := s.requireActorID(ctx, actorID)
 	if err != nil {
 		return err
@@ -297,7 +297,7 @@ func (s *Session) DeleteComment(ctx context.Context, id, actorID int, _ bool, re
 	if comment.Author.ID != user.ID && !moderator {
 		return ErrPermissionDenied
 	}
-	return s.BoardService.DeleteComment(ctx, id, user.ID, moderator, reason)
+	return s.BoardService.DeleteComment(ctx, id, user.ID, reason)
 }
 
 func (s *Session) ListModerationLog(ctx context.Context, limit int) ([]ModerationEntry, error) {

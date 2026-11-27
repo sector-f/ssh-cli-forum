@@ -1116,7 +1116,7 @@ func (m *sessionModel) finishComposition() {
 			m.displayThread(m.draftThreadID, 1)
 		}
 	case composeEditBody:
-		err := m.boards.UpdateThread(m.ctx, m.draftThreadID, m.user.ID, m.draftTitle, body, m.isModerator())
+		err := m.boards.UpdateThread(m.ctx, m.draftThreadID, m.draftTitle, body)
 		if err != nil {
 			m.fail(err)
 		} else {
@@ -1124,7 +1124,7 @@ func (m *sessionModel) finishComposition() {
 			m.displayThread(m.draftThreadID, 1)
 		}
 	case composeEditReplyBody:
-		err := m.boards.UpdateComment(m.ctx, m.draftReplyID, m.user.ID, body, m.isModerator())
+		err := m.boards.UpdateComment(m.ctx, m.draftReplyID, body)
 		if err != nil {
 			m.fail(err)
 		} else {
@@ -1164,7 +1164,7 @@ func (m *sessionModel) deleteOwnTopic(args []string) {
 		m.fail(err)
 		return
 	}
-	if err := m.boards.DeleteThread(m.ctx, id, m.user.ID, false, ""); err != nil {
+	if err := m.boards.DeleteThread(m.ctx, id, m.user.ID, ""); err != nil {
 		m.fail(err)
 		return
 	}
@@ -1184,7 +1184,7 @@ func (m *sessionModel) deleteOwnReply(args []string) {
 		m.addOutput("Invalid reply ID.")
 		return
 	}
-	if err := m.boards.DeleteComment(m.ctx, id, m.user.ID, m.isModerator(), ""); err != nil {
+	if err := m.boards.DeleteComment(m.ctx, id, m.user.ID, ""); err != nil {
 		m.fail(err)
 		return
 	}

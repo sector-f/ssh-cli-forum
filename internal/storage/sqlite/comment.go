@@ -77,12 +77,12 @@ func (s *Store) ListCommentsPage(ctx context.Context, threadID, page, pageSize i
 	return comments, total, rows.Err()
 }
 
-func (s *Store) UpdateComment(ctx context.Context, id, actorID int, body string, _ bool) error {
+func (s *Store) UpdateComment(ctx context.Context, id int, body string) error {
 	_, err = s.db.ExecContext(ctx, "UPDATE comments SET body = ?, updated_at = ? WHERE id = ?", body, nowText(), id)
 	return err
 }
 
-func (s *Store) DeleteComment(ctx context.Context, id, actorID int, moderator bool, reason string) error {
+func (s *Store) DeleteComment(ctx context.Context, id, actorID int, reason string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -99,10 +99,8 @@ func (s *Store) DeleteComment(ctx context.Context, id, actorID int, moderator bo
 	if _, err := tx.ExecContext(ctx, "UPDATE comments SET deleted_at = ? WHERE id = ?", nowText(), id); err != nil {
 		return err
 	}
-	if moderator {
-		if err := addModlog(tx, actorID, "reply_deleted", "comment", id, reason); err != nil {
-			return err
-		}
+	if err := addModlog(tx, actorID, "reply_deleted", "comment", id, reason); err != nil {
+		return err
 	}
 	if _, err := tx.ExecContext(ctx, "UPDATE threads SET last_activity_at = ? WHERE id = ?", nowText(), threadID); err != nil {
 		return err
