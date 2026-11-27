@@ -35,7 +35,7 @@ The generated invitation code is printed once. An administrator can also create 
 
 ## SSH forum commands
 
-The interface is command-oriented and does not use Bubble Tea's alternate screen buffer.
+The main interface is command-oriented and does not use Bubble Tea's alternate screen buffer. The `chat` command opens a separate full-screen global chat view in the alternate screen buffer; `/leave` returns to the forum interface.
 
 - `ls`, `cd`, and `pwd` navigate the virtual forum tree.
 - `/boards` lists boards; `/boards/<slug>` lists a board's topics.
@@ -43,6 +43,7 @@ The interface is command-oriented and does not use Bubble Tea's alternate screen
 - `new` creates a topic from inside a board.
 - `reply` adds a reply from inside a topic.
 - `recent` lists recently active topics.
+- `chat` opens the persistent global chat. In chat, enter a message to post, use `/me <action>` for an action message, and `/leave` to return to forum navigation. The most recent 100 messages are loaded on entry; the mouse wheel scrolls history.
 - `help` lists available commands and permissions.
 
 Multi-line post bodies end with a line containing a single period. Enter `/cancel` to abort. Enter `..` to include a literal period on its own line.

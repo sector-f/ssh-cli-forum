@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish/bubbletea"
@@ -34,6 +36,7 @@ type sessionModel struct {
 	session ssh.Session
 	users   forum.UserService
 	boards  forum.BoardService
+	chat    forum.ChatService
 	user    forum.User
 
 	cwd    string
@@ -45,11 +48,22 @@ type sessionModel struct {
 	draftLines    []string
 	draftThreadID int
 	draftReplyID  int
+
+	chatActive     bool
+	chatInput      textinput.Model
+	chatViewport   viewport.Model
+	chatMessages   []forum.ChatMessage
+	chatEvents     <-chan forum.ChatMessage
+	chatCancel     func()
+	chatGeneration uint64
+	chatStatus     string
+	windowWidth    int
+	windowHeight   int
 }
 
 var _ tea.Model = (*sessionModel)(nil)
 
-func NewProgram(sess ssh.Session, userService forum.UserService, boardService forum.BoardService) (*tea.Program, error) {
+func NewProgram(sess ssh.Session, userService forum.UserService, boardService forum.BoardService, chatServices ...forum.ChatService) (*tea.Program, error) {
 	user, err := userService.GetUserByUsername(sess.User())
 	if err != nil {
 		return nil, fmt.Errorf("load account: %w", err)
@@ -62,9 +76,22 @@ func NewProgram(sess ssh.Session, userService forum.UserService, boardService fo
 	input.Focus()
 	input.CharLimit = 4096
 	input.Width = 100
+
+	chatInput := textinput.New()
+	chatInput.Prompt = "chat> "
+	chatInput.CharLimit = forum.ChatMessageMaxLength
+	chatInput.Width = 100
+	chatViewport := viewport.New(80, 20)
+	chatViewport.MouseWheelEnabled = true
+
+	var chatService forum.ChatService
+	if len(chatServices) > 0 {
+		chatService = chatServices[0]
+	}
 	m := &sessionModel{
-		session: sess, users: userService, boards: boardService, user: user,
-		cwd: "/", input: input,
+		session: sess, users: userService, boards: boardService, chat: chatService, user: user,
+		cwd: "/", input: input, chatInput: chatInput, chatViewport: chatViewport,
+		windowWidth: 80, windowHeight: 24,
 		output: []string{
 			"SSH Community",
 			"-------------",
@@ -78,9 +105,9 @@ func NewProgram(sess ssh.Session, userService forum.UserService, boardService fo
 	return tea.NewProgram(m, tea.WithInput(sess), tea.WithOutput(sess)), nil
 }
 
-func Handler(userService forum.UserService, boardService forum.BoardService) bubbletea.ProgramHandler {
+func Handler(userService forum.UserService, boardService forum.BoardService, chatServices ...forum.ChatService) bubbletea.ProgramHandler {
 	return func(sess ssh.Session) *tea.Program {
-		program, err := NewProgram(sess, userService, boardService)
+		program, err := NewProgram(sess, userService, boardService, chatServices...)
 		if err != nil {
 			_, _ = fmt.Fprintf(sess, "Unable to start forum session: %v\r\n", err)
 			return nil
@@ -91,14 +118,60 @@ func Handler(userService forum.UserService, boardService forum.BoardService) bub
 
 func (m *sessionModel) Init() tea.Cmd { return textinput.Blink }
 
+type chatEventMsg struct {
+	generation uint64
+	message    forum.ChatMessage
+	ok         bool
+}
+
+func waitForChatMessage(generation uint64, events <-chan forum.ChatMessage) tea.Cmd {
+	return func() tea.Msg {
+		message, ok := <-events
+		return chatEventMsg{generation: generation, message: message, ok: ok}
+	}
+}
+
+func teaMsgCmd(message tea.Msg) tea.Cmd {
+	return func() tea.Msg { return message }
+}
+
 func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.windowWidth, m.windowHeight = msg.Width, msg.Height
 		width := msg.Width - len(m.prompt()) - 1
-		if width < 20 { width = 20 }
+		if width < 20 {
+			width = 20
+		}
 		m.input.Width = width
+		if m.chatActive {
+			m.resizeChat(msg.Width, msg.Height)
+		}
 		return m, nil
+
+	case chatEventMsg:
+		if !m.chatActive || msg.generation != m.chatGeneration {
+			return m, nil
+		}
+		if !msg.ok {
+			m.chatEvents = nil
+			m.chatCancel = nil
+			return m, nil
+		}
+		m.appendChatMessage(msg.message)
+		return m, waitForChatMessage(m.chatGeneration, m.chatEvents)
+
+	case tea.MouseMsg:
+		if m.chatActive {
+			var cmd tea.Cmd
+			m.chatViewport, cmd = m.chatViewport.Update(msg)
+			return m, cmd
+		}
+
 	case tea.KeyMsg:
+		if m.chatActive {
+			return m, m.updateChatKey(msg)
+		}
 		switch msg.String() {
 		case "ctrl+c":
 			if m.compose != composeNone {
@@ -115,9 +188,12 @@ func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				line = strings.TrimSpace(line)
 				if line != "" {
 					m.addOutput(m.prompt() + line)
-					if m.execute(line) {
+					quit, cmd := m.execute(line)
+					if quit {
 						return m, tea.Quit
 					}
+					m.input.Prompt = m.currentPrompt()
+					return m, cmd
 				}
 			}
 			m.input.Prompt = m.currentPrompt()
@@ -129,8 +205,196 @@ func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m *sessionModel) updateChatKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "enter":
+		line := strings.TrimSpace(m.chatInput.Value())
+		m.chatInput.Reset()
+		return m.handleChatInput(line)
+	case "pgup", "ctrl+u":
+		m.chatViewport.ViewUp()
+		return nil
+	case "pgdown", "ctrl+d":
+		m.chatViewport.ViewDown()
+		return nil
+	case "ctrl+c":
+		m.chatInput.Reset()
+		m.chatStatus = "Use /leave to return to the forum."
+		return nil
+	}
+	var cmd tea.Cmd
+	m.chatInput, cmd = m.chatInput.Update(msg)
+	return cmd
+}
+
 func (m *sessionModel) View() string {
+	if m.chatActive {
+		return m.chatView()
+	}
 	return strings.Join(m.output, "\n") + "\n" + m.input.View()
+}
+
+func (m *sessionModel) chatView() string {
+	ruleWidth := m.windowWidth
+	if ruleWidth < 1 {
+		ruleWidth = 1
+	}
+	return strings.Join([]string{
+		"GLOBAL CHAT  |  /me <action>  |  /leave",
+		strings.Repeat("-", ruleWidth),
+		m.chatViewport.View(),
+		m.chatStatus,
+		m.chatInput.View(),
+	}, "\n")
+}
+
+func (m *sessionModel) resizeChat(width, height int) {
+	if width < 1 {
+		width = 1
+	}
+	viewportHeight := height - 4
+	if viewportHeight < 1 {
+		viewportHeight = 1
+	}
+	m.chatViewport.Width = width
+	m.chatViewport.Height = viewportHeight
+	m.chatInput.Width = width - len(m.chatInput.Prompt) - 1
+	if m.chatInput.Width < 20 {
+		m.chatInput.Width = 20
+	}
+}
+
+func (m *sessionModel) enterChat() tea.Cmd {
+	if m.chat == nil {
+		m.addOutput("Chat is unavailable.")
+		return nil
+	}
+
+	events, cancel := m.chat.Subscribe(m.session.Context(), forum.GlobalChatChannel)
+	history, err := m.chat.RecentMessages(forum.GlobalChatChannel, 100)
+	if err != nil {
+		cancel()
+		m.fail(err)
+		return nil
+	}
+
+	m.chatGeneration++
+	m.chatEvents = events
+	m.chatCancel = cancel
+	m.chatMessages = history
+	m.chatActive = true
+	m.chatStatus = ""
+	m.chatInput.Reset()
+	m.resizeChat(m.windowWidth, m.windowHeight)
+	focusCmd := m.chatInput.Focus()
+	m.refreshChatViewport(true)
+
+	return tea.Batch(
+		tea.Sequence(teaMsgCmd(tea.EnterAltScreen()), teaMsgCmd(tea.EnableMouseCellMotion())),
+		waitForChatMessage(m.chatGeneration, m.chatEvents),
+		focusCmd,
+	)
+}
+
+func (m *sessionModel) leaveChat() tea.Cmd {
+	m.chatActive = false
+	m.chatGeneration++
+	if m.chatCancel != nil {
+		m.chatCancel()
+		m.chatCancel = nil
+	}
+	m.chatEvents = nil
+	m.chatInput.Blur()
+	m.chatInput.Reset()
+	return tea.Sequence(teaMsgCmd(tea.DisableMouse()), teaMsgCmd(tea.ExitAltScreen()))
+}
+
+func (m *sessionModel) handleChatInput(line string) tea.Cmd {
+	if line == "" {
+		return nil
+	}
+	kind := forum.ChatMessageText
+	body := line
+	if strings.HasPrefix(line, "/") {
+		args, err := splitCommand(strings.TrimSpace(strings.TrimPrefix(line, "/")))
+		if err != nil {
+			m.chatStatus = "Command error: " + err.Error()
+			return nil
+		}
+		if len(args) == 0 {
+			return nil
+		}
+		switch strings.ToLower(args[0]) {
+		case "leave":
+			if len(args) != 1 {
+				m.chatStatus = "Usage: /leave"
+				return nil
+			}
+			return m.leaveChat()
+		case "me":
+			if len(args) < 2 {
+				m.chatStatus = "Usage: /me <action>"
+				return nil
+			}
+			kind = forum.ChatMessageAction
+			body = strings.Join(args[1:], " ")
+		default:
+			m.chatStatus = "Unknown chat command: /" + args[0]
+			return nil
+		}
+	}
+
+	if _, err := m.chat.PostMessage(forum.GlobalChatChannel, m.user.ID, kind, body); err != nil {
+		m.chatStatus = "Error: " + err.Error()
+	} else {
+		m.chatStatus = ""
+	}
+	return nil
+}
+
+func (m *sessionModel) appendChatMessage(message forum.ChatMessage) {
+	for _, existing := range m.chatMessages {
+		if existing.ID == message.ID {
+			return
+		}
+	}
+	wasAtBottom := m.chatViewport.AtBottom()
+	m.chatMessages = append(m.chatMessages, message)
+	sort.Slice(m.chatMessages, func(i, j int) bool { return m.chatMessages[i].ID < m.chatMessages[j].ID })
+	if len(m.chatMessages) > 500 {
+		m.chatMessages = append([]forum.ChatMessage(nil), m.chatMessages[len(m.chatMessages)-500:]...)
+	}
+	m.refreshChatViewport(wasAtBottom)
+}
+
+func (m *sessionModel) refreshChatViewport(goToBottom bool) {
+	lines := make([]string, 0, len(m.chatMessages))
+	for _, message := range m.chatMessages {
+		lines = append(lines, formatChatMessage(message))
+	}
+	m.chatViewport.SetContent(strings.Join(lines, "\n"))
+	if goToBottom {
+		m.chatViewport.GotoBottom()
+	}
+}
+
+func formatChatMessage(message forum.ChatMessage) string {
+	username := cleanTerminalText(message.Username)
+	body := cleanTerminalText(message.Text)
+	timestamp := message.Timestamp.Local().Format("15:04")
+	if message.Kind == forum.ChatMessageAction {
+		return "[" + timestamp + "] * " + username + " " + body
+	}
+	return "[" + timestamp + "] " + username + ": " + body
+}
+
+func cleanTerminalText(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, value)
 }
 
 func (m *sessionModel) prompt() string {
@@ -169,16 +433,18 @@ func (m *sessionModel) fail(err error) {
 	if err != nil { m.addOutput("Error: " + err.Error()) }
 }
 
-func (m *sessionModel) execute(line string) bool {
+func (m *sessionModel) execute(line string) (bool, tea.Cmd) {
 	args, err := splitCommand(line)
-	if err != nil { m.fail(err); return false }
-	if len(args) == 0 { return false }
+	if err != nil { m.fail(err); return false, nil }
+	if len(args) == 0 { return false, nil }
 
 	switch strings.ToLower(args[0]) {
 	case "help", "?":
 		m.help(args[1:])
 	case "pwd":
 		m.addOutput(m.cwd)
+	case "chat":
+		return false, m.enterChat()
 	case "ls":
 		m.listLocation(args[1:])
 	case "cd":
@@ -219,11 +485,11 @@ func (m *sessionModel) execute(line string) bool {
 		m.userAdmin(args[1:])
 	case "exit", "quit":
 		m.addOutput("Disconnecting.")
-		return true
+		return true, nil
 	default:
 		m.addOutput("Unknown command: " + args[0] + ". Type 'help' for commands.")
 	}
-	return false
+	return false, nil
 }
 
 func (m *sessionModel) help(args []string) {
@@ -241,6 +507,7 @@ func (m *sessionModel) help(args []string) {
   show [--page N]       Display the current topic
   whoami                Show your account and role
   profile [username]    Display a profile
+  chat                  Enter the global chat
   help                  Show this help
   exit                  Disconnect
 

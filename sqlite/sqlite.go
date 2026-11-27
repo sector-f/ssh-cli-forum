@@ -7,14 +7,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sector-f/ssh-cli-forum/internal/chatroom"
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
 type Service struct {
-	logger *zap.Logger
-	db     *sql.DB
-	mu     sync.Mutex
+	logger  *zap.Logger
+	db      *sql.DB
+	mu      sync.Mutex
+	chatHub *chatroom.Hub
 }
 
 func Open(logger *zap.Logger, path string) (*Service, error) {
@@ -24,7 +26,7 @@ func Open(logger *zap.Logger, path string) (*Service, error) {
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	s := &Service{logger: logger, db: db}
+	s := &Service{logger: logger, db: db, chatHub: chatroom.NewHub()}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -116,6 +118,32 @@ func (s *Service) migrate() error {
 			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (actor_id) REFERENCES users(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS chat_channels (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			slug TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
+			requires_membership BOOLEAN NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE IF NOT EXISTS chat_channel_memberships (
+			channel_id INTEGER NOT NULL,
+			user_id INTEGER NOT NULL,
+			joined_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			left_at TEXT,
+			PRIMARY KEY (channel_id, user_id),
+			FOREIGN KEY (channel_id) REFERENCES chat_channels(id),
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS chat_messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			channel_id INTEGER NOT NULL,
+			user_id INTEGER NOT NULL,
+			kind TEXT NOT NULL DEFAULT 'text',
+			body TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			FOREIGN KEY (channel_id) REFERENCES chat_channels(id),
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(stmt); err != nil { return fmt.Errorf("create schema: %w", err) }
@@ -204,11 +232,14 @@ func (s *Service) migrate() error {
 		"CREATE INDEX IF NOT EXISTS idx_comments_thread_posted ON comments(thread_id, posted_at)",
 		"CREATE INDEX IF NOT EXISTS idx_invites_expiry ON invites(expires_at)",
 		"CREATE INDEX IF NOT EXISTS idx_modlog_created ON moderation_log(created_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_chat_messages_channel_id ON chat_messages(channel_id, id DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_chat_memberships_user_channel ON chat_channel_memberships(user_id, channel_id, left_at)",
 	}
 	for _, stmt := range indexes {
 		if _, err := tx.Exec(stmt); err != nil { return err }
 	}
-	if _, err := tx.Exec("INSERT OR IGNORE INTO schema_migrations(version) VALUES (1)"); err != nil { return err }
+	if _, err := tx.Exec("INSERT OR IGNORE INTO chat_channels(slug, name, requires_membership) VALUES ('global', 'Global', 0)"); err != nil { return err }
+	if _, err := tx.Exec("INSERT OR IGNORE INTO schema_migrations(version) VALUES (1), (2)"); err != nil { return err }
 	return tx.Commit()
 }
 
