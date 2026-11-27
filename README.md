@@ -80,4 +80,4 @@ forumctl --db PATH user activate USERNAME
 forumctl --db PATH modlog
 ```
 
-Opening the database applies any pending schema upgrades. Existing databases from the earlier prototype are upgraded in place; users, SSH keys, invitations, boards, topics, and replies are preserved. Backups use SQLite's online `VACUUM INTO` operation.
+The server and normal `forumctl` operations apply pending schema upgrades. `forumctl db status` reports applied versions without changing the schema. Existing databases from the earlier prototype are upgraded in place; users, SSH keys, invitations, boards, topics, and replies are preserved. Backups use SQLite's online `VACUUM INTO` operation.

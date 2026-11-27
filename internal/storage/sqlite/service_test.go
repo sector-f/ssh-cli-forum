@@ -49,6 +49,7 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 	}
 
 	store, err := Open(dbPath)
+	if err == nil { err = store.Migrate() }
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +80,7 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 
 func TestForumWriteOperations(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "service.db"))
+	if err == nil { err = store.Migrate() }
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,5 +133,35 @@ func TestForumWriteOperations(t *testing.T) {
 	}
 	if _, err := appSession.GetThreadByID(id); err != nil {
 		t.Fatalf("restored topic should be readable: %v", err)
+	}
+}
+
+
+func TestOpenDoesNotApplyMigrations(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "unmigrated.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	versions, err := store.MigrationVersions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 0 {
+		t.Fatalf("Open applied migrations unexpectedly: %v", versions)
+	}
+	if err := store.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	versions, err = store.MigrationVersions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != len(migrations) {
+		t.Fatalf("applied migrations = %v, want %d versions", versions, len(migrations))
+	}
+	if err := store.Migrate(); err != nil {
+		t.Fatalf("reapplying migrations should be a no-op: %v", err)
 	}
 }

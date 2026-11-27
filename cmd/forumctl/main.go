@@ -44,11 +44,24 @@ func main() {
 func open() (*sqlite.Store, error) { return sqlite.Open(dbPath) }
 
 func withDB(fn func(*sqlite.Store) error) error {
+	return withDBMode(true, fn)
+}
+
+func withDBNoMigrate(fn func(*sqlite.Store) error) error {
+	return withDBMode(false, fn)
+}
+
+func withDBMode(migrate bool, fn func(*sqlite.Store) error) error {
 	s, err := open()
 	if err != nil {
 		return err
 	}
 	defer s.Close()
+	if migrate {
+		if err := s.Migrate(); err != nil {
+			return fmt.Errorf("migrate database: %w", err)
+		}
+	}
 	return fn(s)
 }
 
@@ -70,7 +83,7 @@ func dbCommand() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use: "status", Short: "Show database migration status",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Store) error {
+			return withDBNoMigrate(func(s *sqlite.Store) error {
 				versions, err := s.MigrationVersions()
 				if err != nil {
 					return err

@@ -34,6 +34,10 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("open SQLite storage: %w", err)
 	}
+	if err := store.Migrate(); err != nil {
+		store.Close()
+		return fmt.Errorf("migrate SQLite storage: %w", err)
+	}
 	defer func() {
 		if err := store.Close(); err != nil {
 			logger.Warn("Failed to close storage", zap.Error(err))

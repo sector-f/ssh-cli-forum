@@ -32,6 +32,7 @@ func createChatTestUser(t *testing.T, store *Store) int {
 func TestChatMessagesPersistAndPublish(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "chat.db")
 	store, err := Open(dbPath)
+	if err == nil { err = store.Migrate() }
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,6 +83,7 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 	}
 
 	store, err = Open(dbPath)
+	if err == nil { err = store.Migrate() }
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +99,7 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 
 func TestChatRejectsInvalidMessagesAndUnknownChannels(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "chat.db"))
+	if err == nil { err = store.Migrate() }
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,6 +123,7 @@ func TestChatRejectsInvalidMessagesAndUnknownChannels(t *testing.T) {
 
 func TestChatSubscriptionIsContextBound(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "chat.db"))
+	if err == nil { err = store.Migrate() }
 	if err != nil {
 		t.Fatal(err)
 	}
