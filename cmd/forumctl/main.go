@@ -32,7 +32,7 @@ func main() {
 		Short:        "Manage the SSH community forum database",
 		SilenceUsage: true,
 	}
-	root.PersistentFlags().StringVar(&dbPath, "db", "./service.db", "Path to the SQLite database")
+	root.PersistentFlags().StringVar(&dbPath, "db", "./forum.db", "Path to the SQLite database")
 
 	root.AddCommand(dbCommand(), adminCommand(), boardCommand(), inviteCommand(), userCommand(), moderationCommand())
 	if err := root.Execute(); err != nil {
