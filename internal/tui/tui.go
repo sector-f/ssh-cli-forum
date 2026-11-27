@@ -268,7 +268,7 @@ func (m *sessionModel) chatView() string {
 		ruleWidth = 1
 	}
 	return strings.Join([]string{
-		"GLOBAL CHAT  |  /me <action>  |  /leave",
+		"GLOBAL CHAT  |  /leave",
 		strings.Repeat("-", ruleWidth),
 		m.chatViewport.View(),
 		m.chatStatus,
@@ -341,7 +341,6 @@ func (m *sessionModel) handleChatInput(line string) tea.Cmd {
 	if line == "" {
 		return nil
 	}
-	kind := service.ChatMessageText
 	body := line
 	if strings.HasPrefix(line, "/") {
 		args, err := splitCommand(strings.TrimSpace(strings.TrimPrefix(line, "/")))
@@ -359,20 +358,13 @@ func (m *sessionModel) handleChatInput(line string) tea.Cmd {
 				return nil
 			}
 			return m.leaveChat()
-		case "me":
-			if len(args) < 2 {
-				m.chatStatus = "Usage: /me <action>"
-				return nil
-			}
-			kind = service.ChatMessageAction
-			body = strings.Join(args[1:], " ")
 		default:
 			m.chatStatus = "Unknown chat command: /" + args[0]
 			return nil
 		}
 	}
 
-	if _, err := m.chat.PostMessage(m.ctx, service.GlobalChatChannel, m.user.ID, kind, body); err != nil {
+	if _, err := m.chat.PostMessage(m.ctx, service.GlobalChatChannel, m.user.ID, body); err != nil {
 		m.chatStatus = "Error: " + err.Error()
 	} else {
 		m.chatStatus = ""
@@ -437,9 +429,6 @@ func formatChatMessage(message service.ChatMessage) string {
 	username := cleanTerminalText(message.Username)
 	body := cleanTerminalText(message.Text)
 	timestamp := message.Timestamp.Local().Format("15:04")
-	if message.Kind == service.ChatMessageAction {
-		return "[" + timestamp + "] * " + username + " " + body
-	}
 	return "[" + timestamp + "] " + username + ": " + body
 }
 
