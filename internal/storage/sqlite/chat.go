@@ -3,8 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"strings"
-	"unicode"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
@@ -53,22 +51,6 @@ func (s *Service) RecentMessages(channelSlug string, limit int) ([]service.ChatM
 // PostMessage persists a message before publishing it to live subscribers.
 // SQLite remains the source of truth; the in-memory hub is only an event path.
 func (s *Service) PostMessage(channelSlug string, userID int, kind service.ChatMessageKind, body string) (service.ChatMessage, error) {
-	body = strings.TrimSpace(body)
-	if body == "" {
-		return service.ChatMessage{}, service.ErrChatMessageEmpty
-	}
-	if len([]rune(body)) > service.ChatMessageMaxLength {
-		return service.ChatMessage{}, service.ErrChatMessageTooLong
-	}
-	for _, r := range body {
-		if unicode.IsControl(r) {
-			return service.ChatMessage{}, service.ErrChatMessageInvalid
-		}
-	}
-	if kind != service.ChatMessageText && kind != service.ChatMessageAction {
-		return service.ChatMessage{}, service.ErrChatMessageInvalid
-	}
-
 	tx, err := s.db.Begin()
 	if err != nil {
 		return service.ChatMessage{}, err
@@ -76,35 +58,12 @@ func (s *Service) PostMessage(channelSlug string, userID int, kind service.ChatM
 	defer tx.Rollback()
 
 	var channelID int64
-	var requiresMembership bool
-	if err := tx.QueryRow("SELECT id, requires_membership FROM chat_channels WHERE slug = ?", channelSlug).
-		Scan(&channelID, &requiresMembership); err != nil {
+	if err := tx.QueryRow("SELECT id FROM chat_channels WHERE slug = ?", channelSlug).
+		Scan(&channelID); err != nil {
 		if err == sql.ErrNoRows {
 			return service.ChatMessage{}, service.ErrChatChannelNotFound
 		}
 		return service.ChatMessage{}, err
-	}
-
-	var userStatus string
-	if err := tx.QueryRow("SELECT status FROM users WHERE id = ?", userID).Scan(&userStatus); err != nil {
-		if err == sql.ErrNoRows {
-			return service.ChatMessage{}, service.ErrUserNotFound
-		}
-		return service.ChatMessage{}, err
-	}
-	if userStatus == service.StatusSuspended {
-		return service.ChatMessage{}, service.ErrUserSuspended
-	}
-
-	if requiresMembership {
-		var isMember bool
-		if err := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM chat_channel_memberships "+
-			"WHERE channel_id = ? AND user_id = ? AND left_at IS NULL)", channelID, userID).Scan(&isMember); err != nil {
-			return service.ChatMessage{}, err
-		}
-		if !isMember {
-			return service.ChatMessage{}, service.ErrPermissionDenied
-		}
 	}
 
 	createdAt := nowText()

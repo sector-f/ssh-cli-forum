@@ -19,15 +19,6 @@ func (s *Service) CreateThreadWithBody(title, body string, boardID, authorID int
 	if title == "" {
 		return 0, errors.New("topic title cannot be empty")
 	}
-	var boardStatus string
-	if err := s.db.QueryRow("SELECT status FROM boards WHERE id = ?", boardID).Scan(&boardStatus); errors.Is(err, sql.ErrNoRows) {
-		return 0, service.ErrBoardNotFound
-	} else if err != nil {
-		return 0, err
-	}
-	if boardStatus != service.BoardActive {
-		return 0, service.ErrReadOnly
-	}
 	res, err := s.db.Exec(`INSERT INTO threads (title, board_id, author_id, body, created_at, updated_at, last_activity_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`, title, boardID, authorID, body, nowText(), nowText(), nowText())
 	if err != nil {
@@ -161,16 +152,7 @@ func (s *Service) RecentThreads(limit int) ([]service.ThreadListing, error) {
 	return threads, rows.Err()
 }
 
-func (s *Service) UpdateThread(id, actorID int, title, body string, moderator bool) error {
-	var owner int
-	if err := s.db.QueryRow("SELECT author_id FROM threads WHERE id = ? AND deleted_at IS NULL", id).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
-		return service.ErrThreadNotFound
-	} else if err != nil {
-		return err
-	}
-	if owner != actorID && !moderator {
-		return service.ErrPermissionDenied
-	}
+func (s *Service) UpdateThread(id, actorID int, title, body string, _ bool) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return errors.New("topic title cannot be empty")
@@ -185,15 +167,6 @@ func (s *Service) DeleteThread(id, actorID int, moderator bool, reason string) e
 		return err
 	}
 	defer tx.Rollback()
-	var owner int
-	if err := tx.QueryRow("SELECT author_id FROM threads WHERE id = ? AND deleted_at IS NULL", id).Scan(&owner); errors.Is(err, sql.ErrNoRows) {
-		return service.ErrThreadNotFound
-	} else if err != nil {
-		return err
-	}
-	if owner != actorID && !moderator {
-		return service.ErrPermissionDenied
-	}
 	if _, err := tx.Exec("UPDATE threads SET deleted_at = ?, status = 'hidden', updated_at = ? WHERE id = ?", nowText(), nowText(), id); err != nil {
 		return err
 	}

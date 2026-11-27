@@ -85,7 +85,7 @@ func TestForumWriteOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := store.db.Exec(`INSERT INTO users(username, pubkey, invite_code, role, status, created_at)
-		VALUES('alice', x'01', 'test-invite', 'member', 'active', ?)`, nowText()); err != nil {
+		VALUES('alice', x'01', 'test-invite', 'moderator', 'active', ?)`, nowText()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -109,20 +109,21 @@ func TestForumWriteOperations(t *testing.T) {
 		t.Fatalf("unexpected topic listing: total=%d topics=%+v", total, topics)
 	}
 
-	if err := store.SetThreadStatus(id, 1, service.ThreadLocked, "test lock"); err != nil {
+	appSession := service.NewSession(1, store, store, nil)
+	if err := appSession.SetThreadStatus(id, 1, service.ThreadLocked, "test lock"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateComment(id, 1, "A reply after locking"); !errors.Is(err, service.ErrThreadLocked) {
+	if err := appSession.CreateComment(id, 1, "A reply after locking"); !errors.Is(err, service.ErrThreadLocked) {
 		t.Fatalf("expected locked topic error, got %v", err)
 	}
 
-	if err := store.DeleteThread(id, 1, false, ""); err != nil {
+	if err := appSession.DeleteThread(id, 1, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetThreadStatus(id, 1, service.ThreadOpen, "restore"); err != nil {
+	if err := appSession.SetThreadStatus(id, 1, service.ThreadOpen, "restore"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.GetThreadByID(id); err != nil {
+	if _, err := appSession.GetThreadByID(id); err != nil {
 		t.Fatalf("restored topic should be readable: %v", err)
 	}
 }

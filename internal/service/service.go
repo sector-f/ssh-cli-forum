@@ -75,6 +75,7 @@ type BoardService interface {
 	SetThreadStatus(id, actorID int, status, reason string) error
 
 	ListCommentsPage(threadID, page, pageSize int) ([]Comment, int, error)
+	GetCommentByID(id int) (Comment, error)
 	UpdateComment(id, actorID int, body string, moderator bool) error
 	DeleteComment(id, actorID int, moderator bool, reason string) error
 	ListModerationLog(limit int) ([]ModerationEntry, error)

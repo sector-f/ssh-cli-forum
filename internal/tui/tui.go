@@ -88,8 +88,12 @@ func NewProgram(sess ssh.Session, userService service.UserService, boardService 
 	if len(chatServices) > 0 {
 		chatService = chatServices[0]
 	}
+	appSession := service.NewSession(user.ID, userService, boardService, chatService)
+	if chatService != nil {
+		chatService = appSession
+	}
 	m := &sessionModel{
-		session: sess, users: userService, boards: boardService, chat: chatService, user: user,
+		session: sess, users: appSession, boards: appSession, chat: chatService, user: user,
 		cwd: "/", input: input, chatInput: chatInput, chatViewport: chatViewport,
 		windowWidth: 80, windowHeight: 24,
 		output: []string{

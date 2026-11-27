@@ -294,6 +294,12 @@ func lookupSubcommand(parent command, name string) (command, bool) {
 }
 
 func (m *sessionModel) hasPermission(permission commandPermission) bool {
+	// Keep command visibility and help in sync with administrative changes
+	// made while this SSH session is connected. Authorization itself is
+	// independently enforced by service.Session on every mutation.
+	if current, err := m.users.GetUserByID(m.user.ID); err == nil {
+		m.user = current
+	}
 	switch permission {
 	case permissionModerator:
 		return m.isModerator()
