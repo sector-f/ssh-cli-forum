@@ -28,9 +28,6 @@ const (
 	composeNewTitle
 	composeNewBody
 	composeReplyBody
-	composeEditTitle
-	composeEditBody
-	composeEditReplyBody
 )
 
 type sessionModel struct {
@@ -49,7 +46,6 @@ type sessionModel struct {
 	draftTitle    string
 	draftLines    []string
 	draftThreadID int
-	draftReplyID  int
 
 	chatActive     bool
 	chatInput      textinput.Model
@@ -464,201 +460,8 @@ func (m *sessionModel) currentPrompt() string {
 	switch m.compose {
 	case composeNewTitle:
 		return "Topic title: "
-	case composeNewBody, composeReplyBody, composeEditBody, composeEditReplyBody:
+	case composeNewBody, composeReplyBody:
 		return "| "
-	case composeEditTitle:
-		return "New title (empty keeps current): "
-	default:
-		return m.prompt()
-	}
-}
-
-func (m *sessionModel) addOutput(value string) {
-	for _, line := range strings.Split(strings.TrimRight(value, "\n"), "\n") {
-		// Forum content is untrusted terminal output. Strip control characters
-		// so posts cannot inject ANSI escape sequences into SSH clients.
-		line = strings.Map(func(r rune) rune {
-			if unicode.IsControl(r) {
-				return -1
-			}
-			return r
-		}, line)
-		m.output = append(m.output, line)
-	}
-	if len(m.output) > 1200 {
-		m.output = append([]string(nil), m.output[len(m.output)-1000:]...)
-	}
-}
-
-func (m *sessionModel) fail(err error) {
-	if err != nil {
-		m.addOutput("Error: " + err.Error())
-	}
-}
-
-func (m *sessionModel) execute(line string) (bool, tea.Cmd) {
-	args, err := splitCommand(line)
-	if err != nil {
-		m.fail(err)
-		return false, nil
-	}
-	if len(args) == 0 {
-		return false, nil
-	}
-
-	cmd, ok := lookupCommand(args[0])
-	if !ok {
-		m.addOutput("Unknown command: " + args[0] + ". Type 'help' for commands.")
-		return false, nil
-	}
-
-	cmdArgs := args[1:]
-	prefix := ""
-	requiredPermission := cmd.Permission
-	if len(cmd.Subcommands) > 0 {
-		if len(cmdArgs) == 0 {
-			if !m.hasPermission(requiredPermission) {
-				m.fail(service.ErrPermissionDenied)
-				return false, nil
-			}
-			m.addOutput("Usage: " + cmd.Name + " <subcommand>. Type 'help " + cmd.Name + "' for details.")
-			return false, nil
-		}
-
-		subcommand, found := lookupSubcommand(cmd, cmdArgs[0])
-		if !found {
-			m.addOutput("Unknown " + cmd.Name + " subcommand: " + cmdArgs[0] + ". Type 'help " + cmd.Name + "' for commands.")
-			return false, nil
-		}
-		requiredPermission = effectivePermission(cmd, subcommand)
-		prefix = cmd.Name
-		cmd = subcommand
-		cmdArgs = cmdArgs[1:]
-	}
-
-	if !m.hasPermission(requiredPermission) {
-		m.fail(service.ErrPermissionDenied)
-		return false, nil
-	}
-	if len(cmdArgs) < requiredArguments(cmd) {
-		m.addOutput("Usage: " + commandUsage(cmd, prefix))
-		return false, nil
-	}
-	if cmd.Handler == nil {
-		m.addOutput("Command is not available.")
-		return false, nil
-	}
-	return cmd.Handler(m, cmdArgs)
-}
-
-func (m *sessionModel) help(args []string) {
-	if len(args) > 2 {
-		m.addOutput("Usage: help [command [subcommand]]")
-		return
-	}
-
-	if len(args) == 0 {
-		for _, group := range commandGroupOrder {
-			var entries []string
-			for _, cmd := range commandRegistry() {
-				if cmd.Group != group || !m.hasPermission(cmd.Permission) {
-					continue
-				}
-				if len(cmd.Subcommands) > 0 {
-					for _, subcommand := range cmd.Subcommands {
-						if !m.hasPermission(effectivePermission(cmd, subcommand)) {
-							continue
-						}
-						entries = append(entries, fmt.Sprintf("  %-38s %s", commandUsage(subcommand, cmd.Name), subcommand.Description))
-					}
-					continue
-				}
-				entries = append(entries, fmt.Sprintf("  %-38s %s", commandUsage(cmd, ""), cmd.Description))
-			}
-			if len(entries) == 0 {
-				continue
-			}
-			m.addOutput(group + ":")
-			for _, entry := range entries {
-				m.addOutput(entry)
-			}
-			m.addOutput("")
-		}
-		m.addOutput("Use 'help <command>' for command details.")
-		return
-	}
-
-	cmd, ok := lookupCommand(args[0])
-	if !ok {
-		m.addOutput("No help available for '" + args[0] + "'.")
-		return
-	}
-	if !m.hasPermission(cmd.Permission) {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-
-	if len(args) == 2 {
-		subcommand, found := lookupSubcommand(cmd, args[1])
-		if !found {
-			m.addOutput("No help available for '" + cmd.Name + " " + args[1] + "'.")
-			return
-		}
-		if !m.hasPermission(effectivePermission(cmd, subcommand)) {
-			m.fail(service.ErrPermissionDenied)
-			return
-		}
-		subcommand.Permission = effectivePermission(cmd, subcommand)
-		m.writeCommandHelp(subcommand, cmd.Name)
-		return
-	}
-
-	if len(cmd.Subcommands) > 0 {
-		m.addOutput(cmd.Name + " — " + cmd.Description)
-		m.addOutput("Usage: " + cmd.Name + " <subcommand>")
-		if cmd.Permission != permissionMember {
-			m.addOutput("Permission: " + commandPermissionName(cmd.Permission))
-		}
-		m.addOutput("Subcommands:")
-		for _, subcommand := range cmd.Subcommands {
-			if !m.hasPermission(effectivePermission(cmd, subcommand)) {
-				continue
-			}
-			m.addOutput(fmt.Sprintf("  %-36s %s", commandUsage(subcommand, cmd.Name), subcommand.Description))
-		}
-		return
-	}
-
-	m.writeCommandHelp(cmd, "")
-}
-
-func (m *sessionModel) writeCommandHelp(cmd command, prefix string) {
-	m.addOutput("Usage: " + commandUsage(cmd, prefix))
-	m.addOutput(cmd.Description)
-	if len(cmd.Aliases) > 0 {
-		m.addOutput("Aliases: " + strings.Join(cmd.Aliases, ", "))
-	}
-	if cmd.Permission != permissionMember {
-		m.addOutput("Permission: " + commandPermissionName(cmd.Permission))
-	}
-	for _, arg := range cmd.Arguments {
-		m.addOutput(fmt.Sprintf("  %s: %s", arg.Name, arg.Description))
-	}
-}
-func (m *sessionModel) listLocation(args []string) {
-	location := m.cwd
-	if len(args) > 1 {
-		m.addOutput("Usage: ls [path]")
-		return
-	}
-	if len(args) == 1 {
-		if strings.HasPrefix(args[0], "/") {
-			location = path.Clean(args[0])
-		} else {
-			location = path.Clean(path.Join(m.cwd, args[0]))
-		}
-	}
-	switch {
 	case location == "/":
 		m.addOutput("boards/\nrecent\nhelp")
 	case location == "/boards":
@@ -750,11 +553,7 @@ func (m *sessionModel) printThreadList(threads []service.ThreadListing, page, to
 		if len(title) > 46 {
 			title = title[:43] + "..."
 		}
-		marker := " "
-		if t.IsPinned {
-			marker = "*"
-		}
-		m.addOutput(fmt.Sprintf("%-4d%s %-46s %7d  %s", t.ID, marker, title, t.ReplyCount, relativeTime(t.LastActivityAt)))
+		m.addOutput(fmt.Sprintf("%-4d  %-46s %7d  %s", t.ID, title, t.ReplyCount, relativeTime(t.LastActivityAt)))
 	}
 	start := (page-1)*20 + 1
 	end := start + len(threads) - 1
@@ -823,12 +622,6 @@ func (m *sessionModel) displayThread(id, page int) {
 	}
 	m.addOutput(fmt.Sprintf("[%d] %s", t.ID, t.Title))
 	m.addOutput(fmt.Sprintf("Started by %s · %s · %d replies", t.Author.Username, t.CreatedAt.Format("2006-01-02 15:04"), total))
-	if t.IsPinned {
-		m.addOutput("PINNED")
-	}
-	if t.Status == service.ThreadLocked {
-		m.addOutput("LOCKED")
-	}
 	m.addOutput(strings.Repeat("-", 72))
 	m.addOutput(t.Author.Username + ":")
 	m.addOutput(t.Body)
@@ -929,30 +722,6 @@ func (m *sessionModel) changeDirectory(args []string) {
 	}
 }
 
-func (m *sessionModel) showProfile(args []string) {
-	username := m.user.Username
-	if len(args) > 1 {
-		m.addOutput("Usage: profile [username]")
-		return
-	}
-	if len(args) == 1 {
-		username = args[0]
-	}
-	u, err := m.users.GetUserByUsername(m.ctx, username)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	name := u.DisplayName
-	if name == "" {
-		name = u.Username
-	}
-	m.addOutput(fmt.Sprintf("%s (@%s)", name, u.Username))
-	m.addOutput("Role: " + u.Role)
-	m.addOutput("Status: " + u.Status)
-	m.addOutput("Joined: " + u.CreatedAt.Format("2006-01-02"))
-}
-
 func (m *sessionModel) startNewTopic() {
 	if !strings.HasPrefix(m.cwd, "/boards/") || strings.Count(m.cwd, "/") != 2 {
 		m.addOutput("'new' must be run from inside a board.")
@@ -984,73 +753,10 @@ func (m *sessionModel) startReply() {
 		m.fail(err)
 		return
 	}
-	if t.Status == service.ThreadLocked {
-		m.fail(service.ErrThreadLocked)
-		return
-	}
 	m.compose = composeReplyBody
 	m.draftThreadID = id
 	m.draftLines = nil
 	m.addOutput("Reply body. Enter a single '.' on a line to post; use /cancel to abort.")
-	m.input.Prompt = m.currentPrompt()
-}
-
-func (m *sessionModel) startEditTopic(args []string) {
-	id, err := m.currentThreadID(args)
-	if err != nil {
-		m.fail(errors.New("usage: edit-topic <id> (from inside a topic)"))
-		return
-	}
-	t, err := m.boards.GetThreadByID(m.ctx, id)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	if t.Author.ID != m.user.ID && !m.isModerator() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	m.compose, m.draftThreadID, m.draftTitle = composeEditTitle, id, t.Title
-	board, boardErr := m.boards.GetBoardByID(m.ctx, t.BoardID)
-	if boardErr == nil {
-		m.cwd = path.Join("/boards", board.Slug, strconv.Itoa(id))
-	}
-	m.draftLines = nil
-	m.addOutput("Enter a replacement title, or leave blank to keep the current title. /cancel aborts.")
-	m.input.Prompt = m.currentPrompt()
-}
-
-func (m *sessionModel) startEditReply(args []string) {
-	if len(args) != 1 {
-		m.addOutput("Usage: edit-reply <reply-id>")
-		return
-	}
-	id, err := strconv.Atoi(args[0])
-	if err != nil {
-		m.addOutput("Invalid reply ID.")
-		return
-	}
-	threadID, err := m.currentThreadID(nil)
-	if err != nil {
-		m.fail(errors.New("edit-reply must be run from inside a topic"))
-		return
-	}
-	comment, err := m.boards.GetCommentByID(m.ctx, id)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	if comment.ThreadID != threadID {
-		m.fail(service.ErrCommentNotFound)
-		return
-	}
-	if comment.Author.ID != m.user.ID && !m.isModerator() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	m.compose, m.draftThreadID, m.draftReplyID = composeEditReplyBody, threadID, id
-	m.draftLines = nil
-	m.addOutput("Enter the replacement reply. Finish with '.'; /cancel aborts.")
 	m.input.Prompt = m.currentPrompt()
 }
 
@@ -1074,7 +780,7 @@ func (m *sessionModel) handleComposition(line string) {
 		}
 		m.compose = composeEditBody
 		m.addOutput("Topic body. Enter a single '.' on a line to finish; use /cancel to abort.")
-	case composeNewBody, composeReplyBody, composeEditBody, composeEditReplyBody:
+	case composeNewBody, composeReplyBody:
 		if line == "." {
 			m.finishComposition()
 			return
@@ -1111,22 +817,6 @@ func (m *sessionModel) finishComposition() {
 			m.addOutput("Reply posted.")
 			m.displayThread(m.draftThreadID, 1)
 		}
-	case composeEditBody:
-		err := m.boards.UpdateThread(m.ctx, m.draftThreadID, m.draftTitle, body)
-		if err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Topic updated.")
-			m.displayThread(m.draftThreadID, 1)
-		}
-	case composeEditReplyBody:
-		err := m.boards.UpdateComment(m.ctx, m.draftReplyID, body)
-		if err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Reply updated.")
-			m.displayThread(m.draftThreadID, 1)
-		}
 	}
 	m.resetComposition()
 }
@@ -1160,7 +850,7 @@ func (m *sessionModel) deleteOwnTopic(args []string) {
 		m.fail(err)
 		return
 	}
-	if err := m.boards.DeleteThread(m.ctx, id, m.user.ID, ""); err != nil {
+	if err := m.boards.DeleteThread(m.ctx, id); err != nil {
 		m.fail(err)
 		return
 	}
@@ -1180,7 +870,7 @@ func (m *sessionModel) deleteOwnReply(args []string) {
 		m.addOutput("Invalid reply ID.")
 		return
 	}
-	if err := m.boards.DeleteComment(m.ctx, id, m.user.ID, ""); err != nil {
+	if err := m.boards.DeleteComment(m.ctx, id); err != nil {
 		m.fail(err)
 		return
 	}
@@ -1188,9 +878,6 @@ func (m *sessionModel) deleteOwnReply(args []string) {
 }
 
 
-func (m *sessionModel) isModerator() bool {
-	return m.user.Role == service.RoleModerator || m.user.Role == service.RoleAdmin
-}
 func (m *sessionModel) isAdmin() bool { return m.user.Role == service.RoleAdmin }
 
 func (m *sessionModel) targetID(args []string) (int, error) {
