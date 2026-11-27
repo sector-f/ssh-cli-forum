@@ -32,7 +32,7 @@ func main() {
 		Short:        "Manage the SSH community forum database",
 		SilenceUsage: true,
 	}
-	root.PersistentFlags().StringVar(&dbPath, "db", "./service.db", "Path to the SQLite database")
+	root.PersistentFlags().StringVar(&dbPath, "db", "./forum.db", "Path to the SQLite database")
 
 	root.AddCommand(dbCommand(), adminCommand(), boardCommand(), inviteCommand(), userCommand(), moderationCommand())
 	if err := root.Execute(); err != nil {
@@ -41,14 +41,27 @@ func main() {
 	}
 }
 
-func open() (*sqlite.Service, error) { return sqlite.Open(logger, dbPath) }
+func open() (*sqlite.Store, error) { return sqlite.Open(dbPath) }
 
-func withDB(fn func(*sqlite.Service) error) error {
+func withDB(fn func(*sqlite.Store) error) error {
+	return withDBMode(true, fn)
+}
+
+func withDBNoMigrate(fn func(*sqlite.Store) error) error {
+	return withDBMode(false, fn)
+}
+
+func withDBMode(migrate bool, fn func(*sqlite.Store) error) error {
 	s, err := open()
 	if err != nil {
 		return err
 	}
 	defer s.Close()
+	if migrate {
+		if err := s.Migrate(); err != nil {
+			return fmt.Errorf("migrate database: %w", err)
+		}
+	}
 	return fn(s)
 }
 
@@ -57,7 +70,7 @@ func dbCommand() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use: "migrate", Short: "Apply pending database migrations",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
+			return withDB(func(s *sqlite.Store) error {
 				versions, err := s.MigrationVersions()
 				if err != nil {
 					return err
@@ -70,7 +83,7 @@ func dbCommand() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use: "status", Short: "Show database migration status",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
+			return withDBNoMigrate(func(s *sqlite.Store) error {
 				versions, err := s.MigrationVersions()
 				if err != nil {
 					return err
@@ -84,7 +97,7 @@ func dbCommand() *cobra.Command {
 		Use: "backup <destination>", Short: "Create a consistent SQLite backup",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
+			return withDB(func(s *sqlite.Store) error {
 				if err := s.Backup(args[0]); err != nil {
 					return err
 				}
@@ -113,8 +126,8 @@ func adminCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("parse public key: %w", err)
 			}
-			return withDB(func(s *sqlite.Service) error {
-				if err := s.BootstrapAdmin(username, key); err != nil {
+			return withDB(func(s *sqlite.Store) error {
+				if err := service.NewAccountService(s).BootstrapAdmin(cmd.Context(), username, key.Marshal()); err != nil {
 					return err
 				}
 				fmt.Printf("Created initial administrator account: %s\n", username)
@@ -139,8 +152,8 @@ func boardCommand() *cobra.Command {
 				description = args[2]
 			}
 			sortOrder, _ := cmd.Flags().GetInt("sort-order")
-			return withDB(func(s *sqlite.Service) error {
-				if err := s.CreateBoardWithDetails(args[0], args[1], description, sortOrder, 0); err != nil {
+			return withDB(func(s *sqlite.Store) error {
+				if err := service.NewBoardManager(s).CreateBoardWithDetails(cmd.Context(), args[0], args[1], description, sortOrder, 0); err != nil {
 					return err
 				}
 				fmt.Printf("Created board: %s (%s)\n", args[1], args[0])
@@ -152,8 +165,8 @@ func boardCommand() *cobra.Command {
 	list := &cobra.Command{
 		Use: "list", Short: "List boards",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
-				boards, err := s.ListBoards()
+			return withDB(func(s *sqlite.Store) error {
+				boards, err := s.ListBoards(cmd.Context())
 				if err != nil {
 					return err
 				}
@@ -169,8 +182,8 @@ func boardCommand() *cobra.Command {
 		Use: "update <slug> <name> <description>", Short: "Update board metadata",
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
-				if err := s.UpdateBoard(args[0], args[1], args[2]); err != nil {
+			return withDB(func(s *sqlite.Store) error {
+				if err := service.NewBoardManager(s).UpdateBoard(cmd.Context(), args[0], args[1], args[2]); err != nil {
 					return err
 				}
 				fmt.Println("Board updated.")
@@ -187,8 +200,8 @@ func boardStatusCommand(name, status string) *cobra.Command {
 		Use: name + " <slug>", Short: strings.Title(name) + " a board",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
-				if err := s.SetBoardStatus(args[0], status); err != nil {
+			return withDB(func(s *sqlite.Store) error {
+				if err := service.NewBoardManager(s).SetBoardStatus(cmd.Context(), args[0], status); err != nil {
 					return err
 				}
 				fmt.Printf("Board %s status set to %s.\n", args[0], status)
@@ -213,8 +226,8 @@ func inviteCommand() *cobra.Command {
 				return err
 			}
 			expires := time.Now().Add(duration)
-			return withDB(func(s *sqlite.Service) error {
-				if err := s.CreateInvite(code, expires, admin); err != nil {
+			return withDB(func(s *sqlite.Store) error {
+				if err := service.NewAccountService(s).CreateInvite(cmd.Context(), code, expires, admin); err != nil {
 					return err
 				}
 				fmt.Printf("Invitation created\nCode:    %s\nExpires: %s\nAdmin:   %t\n", code, expires.UTC().Format(time.RFC3339), admin)
@@ -227,8 +240,8 @@ func inviteCommand() *cobra.Command {
 	list := &cobra.Command{
 		Use: "list", Short: "List invitations",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
-				invites, err := s.ListInvites()
+			return withDB(func(s *sqlite.Store) error {
+				invites, err := s.ListInvites(cmd.Context())
 				if err != nil {
 					return err
 				}
@@ -252,8 +265,8 @@ func inviteCommand() *cobra.Command {
 		Use: "revoke <code>", Short: "Revoke an invitation code",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
-				if err := s.RevokeInvite(args[0]); err != nil {
+			return withDB(func(s *sqlite.Store) error {
+				if err := s.RevokeInvite(cmd.Context(), args[0]); err != nil {
 					return err
 				}
 				fmt.Println("Invitation revoked.")
@@ -270,8 +283,8 @@ func userCommand() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use: "list", Short: "List registered users",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
-				users, err := s.ListUsers()
+			return withDB(func(s *sqlite.Store) error {
+				users, err := s.ListUsers(cmd.Context())
 				if err != nil {
 					return err
 				}
@@ -287,8 +300,8 @@ func userCommand() *cobra.Command {
 		Use: "set-role <username> <member|moderator|admin>", Short: "Change a user's role",
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
-				if err := s.SetUserRole(args[0], args[1]); err != nil {
+			return withDB(func(s *sqlite.Store) error {
+				if err := service.NewAccountService(s).SetUserRole(cmd.Context(), args[0], args[1]); err != nil {
 					return err
 				}
 				fmt.Printf("Updated %s role to %s.\n", args[0], args[1])
@@ -305,8 +318,8 @@ func userStatusCommand(name, status string) *cobra.Command {
 		Use: name + " <username>", Short: strings.Title(name) + " a user account",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
-				if err := s.SetUserStatus(args[0], status); err != nil {
+			return withDB(func(s *sqlite.Store) error {
+				if err := service.NewAccountService(s).SetUserStatus(cmd.Context(), args[0], status); err != nil {
 					return err
 				}
 				fmt.Printf("Updated %s status to %s.\n", args[0], status)
@@ -320,8 +333,8 @@ func moderationCommand() *cobra.Command {
 	return &cobra.Command{
 		Use: "modlog", Short: "Display recent moderation actions",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Service) error {
-				entries, err := s.ListModerationLog(100)
+			return withDB(func(s *sqlite.Store) error {
+				entries, err := s.ListModerationLog(cmd.Context(), 100)
 				if err != nil {
 					return err
 				}

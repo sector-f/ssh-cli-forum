@@ -30,9 +30,13 @@ func Run() error {
 	}
 	defer logger.Sync()
 
-	store, err := sqlite.Open(logger, defaultDBPath)
+	store, err := sqlite.Open(defaultDBPath)
 	if err != nil {
 		return fmt.Errorf("open SQLite storage: %w", err)
+	}
+	if err := store.Migrate(); err != nil {
+		store.Close()
+		return fmt.Errorf("migrate SQLite storage: %w", err)
 	}
 	defer func() {
 		if err := store.Close(); err != nil {
@@ -40,12 +44,15 @@ func Run() error {
 		}
 	}()
 
+	chat := service.NewChatService(store)
+	accounts := service.NewAccountService(store)
+
 	server, err := wish.NewServer(
 		wish.WithAddress(defaultAddress),
 		wish.WithPublicKeyAuth(authHandler(logger, store)),
 		wish.WithMiddleware(
-			bubbletea.MiddlewareWithProgramHandler(tui.Handler(store, store, store), termenv.Ascii),
-			signupMiddleware(logger, store),
+			bubbletea.MiddlewareWithProgramHandler(tui.Handler(store, store, chat), termenv.Ascii),
+			signupMiddleware(logger, accounts),
 			loggingMiddleware(logger),
 			activeterm.Middleware(),
 		),
@@ -74,7 +81,12 @@ func authHandler(logger *zap.Logger, users service.UserService) ssh.PublicKeyHan
 		if username == service.SignupUsername {
 			return true
 		}
-		return users.AuthenticateUser(username, key)
+		authenticated, err := users.AuthenticateUser(ctx, username, key.Marshal())
+		if err != nil {
+			logger.Error("Failed to authenticate user", zap.Error(err))
+			return false
+		}
+		return authenticated
 	}
 }
 
@@ -101,14 +113,14 @@ func loggingMiddleware(logger *zap.Logger) wish.Middleware {
 	}
 }
 
-func signupMiddleware(logger *zap.Logger, users service.UserService) wish.Middleware {
+func signupMiddleware(logger *zap.Logger, accounts *service.AccountService) wish.Middleware {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(sess ssh.Session) {
 			if sess.User() != service.SignupUsername {
 				next(sess)
 				return
 			}
-			if err := handleSignup(logger, sess, users); err != nil {
+			if err := handleSignup(logger, sess, accounts); err != nil {
 				fmt.Fprintf(sess, "Error: %s\r\n", err)
 				_ = sess.Exit(1)
 				return

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -34,6 +35,7 @@ const (
 
 type sessionModel struct {
 	session ssh.Session
+	ctx     context.Context
 	users   service.UserService
 	boards  service.BoardService
 	chat    service.ChatService
@@ -64,7 +66,7 @@ type sessionModel struct {
 var _ tea.Model = (*sessionModel)(nil)
 
 func NewProgram(sess ssh.Session, userService service.UserService, boardService service.BoardService, chatServices ...service.ChatService) (*tea.Program, error) {
-	user, err := userService.GetUserByUsername(sess.User())
+	user, err := userService.GetUserByUsername(sess.Context(), sess.User())
 	if err != nil {
 		return nil, fmt.Errorf("load account: %w", err)
 	}
@@ -88,8 +90,12 @@ func NewProgram(sess ssh.Session, userService service.UserService, boardService 
 	if len(chatServices) > 0 {
 		chatService = chatServices[0]
 	}
+	appSession := service.NewSession(user.ID, userService, boardService, chatService)
+	if chatService != nil {
+		chatService = appSession
+	}
 	m := &sessionModel{
-		session: sess, users: userService, boards: boardService, chat: chatService, user: user,
+		session: sess, ctx: sess.Context(), users: appSession, boards: appSession, chat: chatService, user: user,
 		cwd: "/", input: input, chatInput: chatInput, chatViewport: chatViewport,
 		windowWidth: 80, windowHeight: 24,
 		output: []string{
@@ -122,6 +128,13 @@ type chatEventMsg struct {
 	generation uint64
 	message    service.ChatMessage
 	ok         bool
+}
+
+type chatHistoryMsg struct {
+	generation uint64
+	messages   []service.ChatMessage
+	trigger    service.ChatMessage
+	err        error
 }
 
 func waitForChatMessage(generation uint64, events <-chan service.ChatMessage) tea.Cmd {
@@ -158,8 +171,22 @@ func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chatCancel = nil
 			return m, nil
 		}
-		m.appendChatMessage(msg.message)
-		return m, waitForChatMessage(m.chatGeneration, m.chatEvents)
+		return m, tea.Batch(m.appendChatMessage(msg.message), waitForChatMessage(m.chatGeneration, m.chatEvents))
+
+	case chatHistoryMsg:
+		if !m.chatActive || msg.generation != m.chatGeneration {
+			return m, nil
+		}
+		wasAtBottom := m.chatViewport.AtBottom()
+		if msg.err != nil {
+			m.chatStatus = "Missed messages; history reload failed."
+			m.appendChatMessageNow(msg.trigger)
+			return m, nil
+		}
+		m.chatMessages = msg.messages
+		m.chatStatus = "Recovered missed messages from history."
+		m.refreshChatViewport(wasAtBottom)
+		return m, nil
 
 	case tea.MouseMsg:
 		if m.chatActive {
@@ -276,7 +303,7 @@ func (m *sessionModel) enterChat() tea.Cmd {
 	}
 
 	events, cancel := m.chat.Subscribe(m.session.Context(), service.GlobalChatChannel)
-	history, err := m.chat.RecentMessages(service.GlobalChatChannel, 100)
+	history, err := m.chat.RecentMessages(m.ctx, service.GlobalChatChannel, 100)
 	if err != nil {
 		cancel()
 		m.fail(err)
@@ -349,7 +376,7 @@ func (m *sessionModel) handleChatInput(line string) tea.Cmd {
 		}
 	}
 
-	if _, err := m.chat.PostMessage(service.GlobalChatChannel, m.user.ID, kind, body); err != nil {
+	if _, err := m.chat.PostMessage(m.ctx, service.GlobalChatChannel, m.user.ID, kind, body); err != nil {
 		m.chatStatus = "Error: " + err.Error()
 	} else {
 		m.chatStatus = ""
@@ -357,7 +384,34 @@ func (m *sessionModel) handleChatInput(line string) tea.Cmd {
 	return nil
 }
 
-func (m *sessionModel) appendChatMessage(message service.ChatMessage) {
+func (m *sessionModel) appendChatMessage(message service.ChatMessage) tea.Cmd {
+	latestID := m.latestChatMessageID()
+	if latestID > 0 && message.ID > latestID+1 && m.chat != nil {
+		generation := m.chatGeneration
+		return func() tea.Msg {
+			messages, err := m.chat.RecentMessages(m.ctx, service.GlobalChatChannel, 500)
+			return chatHistoryMsg{generation: generation, messages: messages, trigger: message, err: err}
+		}
+	}
+	m.appendChatMessageNow(message)
+	return nil
+}
+
+func (m *sessionModel) latestChatMessageID() int64 {
+	var latest int64
+	for _, message := range m.chatMessages {
+		if message.ID > latest {
+			latest = message.ID
+		}
+	}
+	return latest
+}
+
+
+func (m *sessionModel) appendChatMessageNow(message service.ChatMessage) {
+	if message.ID == 0 {
+		return
+	}
 	for _, existing := range m.chatMessages {
 		if existing.ID == message.ID {
 			return
@@ -459,6 +513,7 @@ func (m *sessionModel) execute(line string) (bool, tea.Cmd) {
 	}
 
 	cmdArgs := args[1:]
+	prefix := ""
 	requiredPermission := cmd.Permission
 	if len(cmd.Subcommands) > 0 {
 		if len(cmdArgs) == 0 {
@@ -476,12 +531,17 @@ func (m *sessionModel) execute(line string) (bool, tea.Cmd) {
 			return false, nil
 		}
 		requiredPermission = effectivePermission(cmd, subcommand)
+		prefix = cmd.Name
 		cmd = subcommand
 		cmdArgs = cmdArgs[1:]
 	}
 
 	if !m.hasPermission(requiredPermission) {
 		m.fail(service.ErrPermissionDenied)
+		return false, nil
+	}
+	if len(cmdArgs) < requiredArguments(cmd) {
+		m.addOutput("Usage: " + commandUsage(cmd, prefix))
 		return false, nil
 	}
 	if cmd.Handler == nil {
@@ -602,7 +662,7 @@ func (m *sessionModel) listLocation(args []string) {
 	case location == "/":
 		m.addOutput("boards/\nrecent\nhelp")
 	case location == "/boards":
-		boards, err := m.boards.ListBoards()
+		boards, err := m.boards.ListBoards(m.ctx)
 		if err != nil {
 			m.fail(err)
 			return
@@ -644,14 +704,14 @@ func (m *sessionModel) printBoards(boards []service.BoardListing) {
 }
 
 func (m *sessionModel) printBoardTopics(slug string, page int) {
-	b, err := m.boards.GetBoardBySlug(slug)
+	b, err := m.boards.GetBoardBySlug(m.ctx, slug)
 	if err != nil {
 		m.fail(err)
 		return
 	}
 	m.addOutput(fmt.Sprintf("%s — %s", b.Name, b.Description))
 	m.addOutput(fmt.Sprintf("Board status: %s", b.Status))
-	threads, total, err := m.boards.ListThreadsPage(b.ID, page, 20)
+	threads, total, err := m.boards.ListThreadsPage(m.ctx, b.ID, page, 20)
 	if err != nil {
 		m.fail(err)
 		return
@@ -666,12 +726,12 @@ func (m *sessionModel) listTopics(args []string) {
 		return
 	}
 	page := pageArgument(args)
-	board, err := m.boards.GetBoardBySlug(parts[0])
+	board, err := m.boards.GetBoardBySlug(m.ctx, parts[0])
 	if err != nil {
 		m.fail(err)
 		return
 	}
-	threads, total, err := m.boards.ListThreadsPage(board.ID, page, 20)
+	threads, total, err := m.boards.ListThreadsPage(m.ctx, board.ID, page, 20)
 	if err != nil {
 		m.fail(err)
 		return
@@ -705,7 +765,7 @@ func (m *sessionModel) printThreadList(threads []service.ThreadListing, page, to
 }
 
 func (m *sessionModel) showRecent() {
-	threads, err := m.boards.RecentThreads(20)
+	threads, err := m.boards.RecentThreads(m.ctx, 20)
 	if err != nil {
 		m.fail(err)
 		return
@@ -735,12 +795,12 @@ func (m *sessionModel) showCurrent(args []string) {
 	// An explicit topic ID is a navigation action too: establish its board/topic
 	// context so subsequent commands such as 'reply' work without another cd.
 	if len(args) > 0 && args[0] != "--page" {
-		thread, err := m.boards.GetThreadByID(id)
+		thread, err := m.boards.GetThreadByID(m.ctx, id)
 		if err != nil {
 			m.fail(err)
 			return
 		}
-		board, err := m.boards.GetBoardByID(thread.BoardID)
+		board, err := m.boards.GetBoardByID(m.ctx, thread.BoardID)
 		if err != nil {
 			m.fail(err)
 			return
@@ -751,17 +811,18 @@ func (m *sessionModel) showCurrent(args []string) {
 }
 
 func (m *sessionModel) displayThread(id, page int) {
-	t, err := m.boards.GetThreadByID(id)
+	t, err := m.boards.GetThreadByID(m.ctx, id)
 	if err != nil {
 		m.fail(err)
 		return
 	}
-	if t.Status == service.ThreadHidden && !m.isModerator() {
-		m.addOutput("Topic not found.")
+	comments, total, err := m.boards.ListCommentsPage(m.ctx, id, page, 10)
+	if err != nil {
+		m.fail(err)
 		return
 	}
 	m.addOutput(fmt.Sprintf("[%d] %s", t.ID, t.Title))
-	m.addOutput(fmt.Sprintf("Started by %s · %s · %d replies", t.Author.Username, t.CreatedAt.Format("2006-01-02 15:04"), len(t.Comments)))
+	m.addOutput(fmt.Sprintf("Started by %s · %s · %d replies", t.Author.Username, t.CreatedAt.Format("2006-01-02 15:04"), total))
 	if t.IsPinned {
 		m.addOutput("PINNED")
 	}
@@ -772,11 +833,6 @@ func (m *sessionModel) displayThread(id, page int) {
 	m.addOutput(t.Author.Username + ":")
 	m.addOutput(t.Body)
 	m.addOutput(strings.Repeat("-", 72))
-	comments, total, err := m.boards.ListCommentsPage(id, page, 10)
-	if err != nil {
-		m.fail(err)
-		return
-	}
 	for _, c := range comments {
 		m.addOutput(fmt.Sprintf("%s · %s", c.Author.Username, c.PostedAt.Format("2006-01-02 15:04")))
 		m.addOutput(c.Body)
@@ -825,7 +881,7 @@ func (m *sessionModel) changeDirectory(args []string) {
 	case target == "/", target == "/boards", target == "/recent":
 		m.cwd = target
 		if target == "/boards" {
-			if b, err := m.boards.ListBoards(); err == nil {
+			if b, err := m.boards.ListBoards(m.ctx); err == nil {
 				m.printBoards(b)
 			}
 		}
@@ -835,7 +891,7 @@ func (m *sessionModel) changeDirectory(args []string) {
 	case strings.HasPrefix(target, "/boards/"):
 		parts := strings.Split(strings.TrimPrefix(target, "/boards/"), "/")
 		if len(parts) == 1 && parts[0] != "" {
-			b, err := m.boards.GetBoardBySlug(parts[0])
+			b, err := m.boards.GetBoardBySlug(m.ctx, parts[0])
 			if err != nil {
 				m.fail(err)
 				return
@@ -849,12 +905,12 @@ func (m *sessionModel) changeDirectory(args []string) {
 				m.addOutput("Invalid topic ID.")
 				return
 			}
-			t, err := m.boards.GetThreadByID(id)
+			t, err := m.boards.GetThreadByID(m.ctx, id)
 			if err != nil {
 				m.fail(err)
 				return
 			}
-			b, err := m.boards.GetBoardByID(t.BoardID)
+			b, err := m.boards.GetBoardByID(m.ctx, t.BoardID)
 			if err != nil {
 				m.fail(err)
 				return
@@ -882,9 +938,9 @@ func (m *sessionModel) showProfile(args []string) {
 	if len(args) == 1 {
 		username = args[0]
 	}
-	u, err := m.users.GetUserByUsername(username)
+	u, err := m.users.GetUserByUsername(m.ctx, username)
 	if err != nil {
-		m.fail(service.ErrUserNotFound)
+		m.fail(err)
 		return
 	}
 	name := u.DisplayName
@@ -902,7 +958,7 @@ func (m *sessionModel) startNewTopic() {
 		m.addOutput("'new' must be run from inside a board.")
 		return
 	}
-	board, err := m.boards.GetBoardBySlug(strings.TrimPrefix(m.cwd, "/boards/"))
+	board, err := m.boards.GetBoardBySlug(m.ctx, strings.TrimPrefix(m.cwd, "/boards/"))
 	if err != nil {
 		m.fail(err)
 		return
@@ -923,7 +979,7 @@ func (m *sessionModel) startReply() {
 		m.fail(errors.New("'reply' must be run from inside a topic"))
 		return
 	}
-	t, err := m.boards.GetThreadByID(id)
+	t, err := m.boards.GetThreadByID(m.ctx, id)
 	if err != nil {
 		m.fail(err)
 		return
@@ -945,7 +1001,7 @@ func (m *sessionModel) startEditTopic(args []string) {
 		m.fail(errors.New("usage: edit-topic <id> (from inside a topic)"))
 		return
 	}
-	t, err := m.boards.GetThreadByID(id)
+	t, err := m.boards.GetThreadByID(m.ctx, id)
 	if err != nil {
 		m.fail(err)
 		return
@@ -955,7 +1011,7 @@ func (m *sessionModel) startEditTopic(args []string) {
 		return
 	}
 	m.compose, m.draftThreadID, m.draftTitle = composeEditTitle, id, t.Title
-	board, boardErr := m.boards.GetBoardByID(t.BoardID)
+	board, boardErr := m.boards.GetBoardByID(m.ctx, t.BoardID)
 	if boardErr == nil {
 		m.cwd = path.Join("/boards", board.Slug, strconv.Itoa(id))
 	}
@@ -979,25 +1035,23 @@ func (m *sessionModel) startEditReply(args []string) {
 		m.fail(errors.New("edit-reply must be run from inside a topic"))
 		return
 	}
-	comments, err := m.boards.ListComments(threadID)
+	comment, err := m.boards.GetCommentByID(m.ctx, id)
 	if err != nil {
 		m.fail(err)
 		return
 	}
-	for _, c := range comments {
-		if c.ID == id {
-			if c.Author.ID != m.user.ID && !m.isModerator() {
-				m.fail(service.ErrPermissionDenied)
-				return
-			}
-			m.compose, m.draftThreadID, m.draftReplyID = composeEditReplyBody, threadID, id
-			m.draftLines = nil
-			m.addOutput("Enter the replacement reply. Finish with '.'; /cancel aborts.")
-			m.input.Prompt = m.currentPrompt()
-			return
-		}
+	if comment.ThreadID != threadID {
+		m.fail(service.ErrCommentNotFound)
+		return
 	}
-	m.fail(service.ErrCommentNotFound)
+	if comment.Author.ID != m.user.ID && !m.isModerator() {
+		m.fail(service.ErrPermissionDenied)
+		return
+	}
+	m.compose, m.draftThreadID, m.draftReplyID = composeEditReplyBody, threadID, id
+	m.draftLines = nil
+	m.addOutput("Enter the replacement reply. Finish with '.'; /cancel aborts.")
+	m.input.Prompt = m.currentPrompt()
 }
 
 func (m *sessionModel) handleComposition(line string) {
@@ -1041,7 +1095,7 @@ func (m *sessionModel) finishComposition() {
 		id, err := m.currentBoardID()
 		if err == nil {
 			var threadID int
-			threadID, err = m.boards.CreateThreadWithBody(m.draftTitle, body, id, m.user.ID)
+			threadID, err = m.boards.CreateThreadWithBody(m.ctx, m.draftTitle, body, id, m.user.ID)
 			if err == nil {
 				m.addOutput(fmt.Sprintf("Topic created: #%d", threadID))
 				m.cwd = path.Join(m.cwd, strconv.Itoa(threadID))
@@ -1050,7 +1104,7 @@ func (m *sessionModel) finishComposition() {
 		}
 		m.fail(err)
 	case composeReplyBody:
-		err := m.boards.CreateComment(m.draftThreadID, m.user.ID, body)
+		err := m.boards.CreateComment(m.ctx, m.draftThreadID, m.user.ID, body)
 		if err != nil {
 			m.fail(err)
 		} else {
@@ -1058,7 +1112,7 @@ func (m *sessionModel) finishComposition() {
 			m.displayThread(m.draftThreadID, 1)
 		}
 	case composeEditBody:
-		err := m.boards.UpdateThread(m.draftThreadID, m.user.ID, m.draftTitle, body, m.isModerator())
+		err := m.boards.UpdateThread(m.ctx, m.draftThreadID, m.draftTitle, body)
 		if err != nil {
 			m.fail(err)
 		} else {
@@ -1066,7 +1120,7 @@ func (m *sessionModel) finishComposition() {
 			m.displayThread(m.draftThreadID, 1)
 		}
 	case composeEditReplyBody:
-		err := m.boards.UpdateComment(m.draftReplyID, m.user.ID, body, m.isModerator())
+		err := m.boards.UpdateComment(m.ctx, m.draftReplyID, body)
 		if err != nil {
 			m.fail(err)
 		} else {
@@ -1096,7 +1150,7 @@ func (m *sessionModel) currentBoardID() (int, error) {
 	if strings.Contains(slug, "/") {
 		return 0, errors.New("not currently in a board")
 	}
-	board, err := m.boards.GetBoardBySlug(slug)
+	board, err := m.boards.GetBoardBySlug(m.ctx, slug)
 	return board.ID, err
 }
 
@@ -1106,7 +1160,7 @@ func (m *sessionModel) deleteOwnTopic(args []string) {
 		m.fail(err)
 		return
 	}
-	if err := m.boards.DeleteThread(id, m.user.ID, false, ""); err != nil {
+	if err := m.boards.DeleteThread(m.ctx, id, m.user.ID, ""); err != nil {
 		m.fail(err)
 		return
 	}
@@ -1126,260 +1180,18 @@ func (m *sessionModel) deleteOwnReply(args []string) {
 		m.addOutput("Invalid reply ID.")
 		return
 	}
-	if err := m.boards.DeleteComment(id, m.user.ID, m.isModerator(), ""); err != nil {
+	if err := m.boards.DeleteComment(m.ctx, id, m.user.ID, ""); err != nil {
 		m.fail(err)
 		return
 	}
 	m.addOutput("Reply deleted.")
 }
 
-func (m *sessionModel) moderateThread(args []string) {
-	if !m.isModerator() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	if len(args) < 2 {
-		m.addOutput("Usage: " + args[0] + " <topic-id> [reason]")
-		return
-	}
-	id, err := strconv.Atoi(args[1])
-	if err != nil {
-		m.addOutput("Invalid topic ID.")
-		return
-	}
-	reason := strings.TrimSpace(strings.Join(args[2:], " "))
-	switch args[0] {
-	case "lock":
-		err = m.boards.SetThreadStatus(id, m.user.ID, service.ThreadLocked, reason)
-	case "unlock", "restore-thread":
-		err = m.boards.SetThreadStatus(id, m.user.ID, service.ThreadOpen, reason)
-	case "hide-thread":
-		err = m.boards.SetThreadStatus(id, m.user.ID, service.ThreadHidden, reason)
-	case "pin":
-		err = m.boards.SetThreadPinned(id, m.user.ID, true, reason)
-	case "unpin":
-		err = m.boards.SetThreadPinned(id, m.user.ID, false, reason)
-	case "delete-thread":
-		err = m.boards.DeleteThread(id, m.user.ID, true, reason)
-	}
-	if err != nil {
-		m.fail(err)
-	} else {
-		m.addOutput("Moderation action completed.")
-	}
-}
-
-func (m *sessionModel) showModlog(args []string) {
-	if !m.isModerator() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	entries, err := m.boards.ListModerationLog(100)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	if len(entries) == 0 {
-		m.addOutput("No moderation actions recorded.")
-		return
-	}
-	for _, e := range entries {
-		m.addOutput(fmt.Sprintf("%s  %s  %s #%d  by %s  %s", e.CreatedAt.Format("2006-01-02 15:04"), e.Action, e.TargetType, e.TargetID, e.Actor.Username, e.Reason))
-	}
-}
-
-func (m *sessionModel) boardAdmin(args []string) {
-	if !m.isAdmin() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	if len(args) == 0 {
-		m.addOutput("Usage: board <create|update|archive|restore|list> ...")
-		return
-	}
-	switch args[0] {
-	case "list":
-		boards, err := m.boards.ListBoards()
-		if err != nil {
-			m.fail(err)
-			return
-		}
-		m.printBoards(boards)
-	case "create":
-		if len(args) < 3 {
-			m.addOutput(`Usage: board create <slug> "Name" ["Description"]`)
-			return
-		}
-		description := ""
-		if len(args) > 3 {
-			description = strings.Join(args[3:], " ")
-		}
-		if err := m.boards.CreateBoardWithDetails(args[1], args[2], description, 0, m.user.ID); err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Board created: " + args[1])
-		}
-	case "update":
-		if len(args) < 4 {
-			m.addOutput(`Usage: board update <slug> "Name" "Description"`)
-			return
-		}
-		if err := m.boards.UpdateBoard(args[1], args[2], strings.Join(args[3:], " ")); err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Board updated.")
-		}
-	case "archive", "restore":
-		if len(args) != 2 {
-			m.addOutput("Usage: board " + args[0] + " <slug>")
-			return
-		}
-		status := service.BoardArchived
-		if args[0] == "restore" {
-			status = service.BoardActive
-		}
-		if err := m.boards.SetBoardStatus(args[1], status); err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Board status updated.")
-		}
-	default:
-		m.addOutput("Unknown board subcommand.")
-	}
-}
-
-func (m *sessionModel) inviteAdmin(args []string) {
-	if !m.isAdmin() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	if len(args) == 0 {
-		m.addOutput("Usage: invite <create|list|revoke>")
-		return
-	}
-	switch args[0] {
-	case "list":
-		invites, err := m.users.ListInvites()
-		if err != nil {
-			m.fail(err)
-			return
-		}
-		for _, i := range invites {
-			status := "available"
-			if i.RedeemedBy != "" {
-				status = "redeemed by " + i.RedeemedBy
-			}
-			if !i.RevokedAt.IsZero() {
-				status = "revoked"
-			} else if time.Now().After(i.ExpiresAt) {
-				status = "expired"
-			}
-			m.addOutput(fmt.Sprintf("%s  %-20s expires %s  admin=%t", i.Code, status, i.ExpiresAt.Format("2006-01-02 15:04"), i.IsAdmin))
-		}
-	case "create":
-		duration := 7 * 24 * time.Hour
-		admin := false
-		for _, arg := range args[1:] {
-			if arg == "--admin" {
-				admin = true
-				continue
-			}
-			if d, err := time.ParseDuration(arg); err == nil {
-				duration = d
-			} else {
-				m.addOutput("Invalid duration: " + arg)
-				return
-			}
-		}
-		if duration <= 0 {
-			m.addOutput("Invite duration must be positive.")
-			return
-		}
-		code, err := newInviteCode()
-		if err == nil {
-			err = m.users.CreateInvite(code, time.Now().Add(duration), admin)
-		}
-		if err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Invitation created: " + code)
-			m.addOutput("Expires: " + time.Now().Add(duration).Format(time.RFC3339))
-		}
-	case "revoke":
-		if len(args) != 2 {
-			m.addOutput("Usage: invite revoke <code>")
-			return
-		}
-		if err := m.users.RevokeInvite(args[1]); err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Invitation revoked.")
-		}
-	default:
-		m.addOutput("Unknown invite subcommand.")
-	}
-}
-
-func (m *sessionModel) listUsers() {
-	if !m.isAdmin() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	users, err := m.users.ListUsers()
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	m.addOutput("USERNAME              ROLE       STATUS")
-	for _, u := range users {
-		m.addOutput(fmt.Sprintf("%-21s %-10s %s", u.Username, u.Role, u.Status))
-	}
-}
-
-func (m *sessionModel) userAdmin(args []string) {
-	if !m.isAdmin() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	if len(args) != 2 && len(args) != 3 {
-		m.addOutput("Usage: user role <username> <role> | user suspend|activate <username>")
-		return
-	}
-	var err error
-	switch args[0] {
-	case "role":
-		if len(args) != 3 {
-			m.addOutput("Usage: user role <username> <member|moderator|admin>")
-			return
-		}
-		err = m.users.SetUserRole(args[1], args[2])
-	case "suspend":
-		if len(args) != 2 {
-			m.addOutput("Usage: user suspend <username>")
-			return
-		}
-		err = m.users.SetUserStatus(args[1], service.StatusSuspended)
-	case "activate":
-		if len(args) != 2 {
-			m.addOutput("Usage: user activate <username>")
-			return
-		}
-		err = m.users.SetUserStatus(args[1], service.StatusActive)
-	default:
-		m.addOutput("Unknown user subcommand.")
-		return
-	}
-	if err != nil {
-		m.fail(err)
-	} else {
-		m.addOutput("User updated.")
-	}
-}
 
 func (m *sessionModel) isModerator() bool {
-	return m.user.Role == service.RoleModerator || m.user.Role == service.RoleAdmin || m.user.IsAdmin
+	return m.user.Role == service.RoleModerator || m.user.Role == service.RoleAdmin
 }
-func (m *sessionModel) isAdmin() bool { return m.user.Role == service.RoleAdmin || m.user.IsAdmin }
+func (m *sessionModel) isAdmin() bool { return m.user.Role == service.RoleAdmin }
 
 func (m *sessionModel) targetID(args []string) (int, error) {
 	if len(args) == 1 {

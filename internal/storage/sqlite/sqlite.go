@@ -4,55 +4,112 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/sector-f/ssh-cli-forum/internal/service"
-	"go.uber.org/zap"
 )
 
-type Service struct {
-	logger  *zap.Logger
-	db      *sql.DB
-	mu      sync.Mutex
-	chatHub *service.ChatHub
+type Store struct {
+	db *sql.DB
 }
 
-func Open(logger *zap.Logger, path string) (*Service, error) {
+func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on&_busy_timeout=5000")
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	s := &Service{logger: logger, db: db, chatHub: service.NewChatHub()}
-	if err := s.migrate(); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return s, nil
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
+	return &Store{db: db}, nil
 }
 
-func (s *Service) Close() error { return s.db.Close() }
+func (s *Store) Close() error { return s.db.Close() }
 
-func (s *Service) migrate() error {
-	if _, err := s.db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		return err
-	}
+type schemaMigration struct {
+	version int
+	apply   func(*sql.Tx) error
+}
+
+var migrations = []schemaMigration{
+	{version: 1, apply: createSchema},
+	{version: 2, apply: upgradeSchema},
+	{version: 3, apply: removeLegacyAdminFlag},
+}
+
+// Migrate applies pending schema migrations in order. Each migration and its
+// version record commit atomically, so an interrupted migration can be retried.
+func (s *Store) Migrate() error {
 	if _, err := s.db.Exec("PRAGMA journal_mode = WAL"); err != nil {
+		return fmt.Errorf("enable WAL: %w", err)
+	}
+	if _, err := s.db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec("PRAGMA busy_timeout = 5000"); err != nil {
 		return err
 	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
+	for _, migration := range migrations {
+		applied, err := s.migrationApplied(migration.version)
+		if err != nil {
+			return fmt.Errorf("check migration %d: %w", migration.version, err)
+		}
+		if applied {
+			continue
+		}
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin migration %d: %w", migration.version, err)
+		}
+		var hasHistory bool
+		if err := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations')").Scan(&hasHistory); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("recheck migration %d: %w", migration.version, err)
+		}
+		if hasHistory {
+			var count int
+			if err := tx.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE version = ?", migration.version).Scan(&count); err != nil {
+				_ = tx.Rollback()
+				return fmt.Errorf("recheck migration %d: %w", migration.version, err)
+			}
+			if count > 0 {
+				_ = tx.Rollback()
+				continue
+			}
+		} else if migration.version > 1 {
+			_ = tx.Rollback()
+			return fmt.Errorf("migration history is missing before version %d", migration.version)
+		}
+		if err := migration.apply(tx); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("apply migration %d: %w", migration.version, err)
+		}
+		if _, err := tx.Exec("INSERT INTO schema_migrations(version) VALUES (?)", migration.version); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record migration %d: %w", migration.version, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %d: %w", migration.version, err)
+		}
 	}
-	defer tx.Rollback()
+	return nil
+}
 
+func (s *Store) migrationApplied(version int) (bool, error) {
+	var hasTable bool
+	if err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations')").Scan(&hasTable); err != nil {
+		return false, err
+	}
+	if !hasTable {
+		return false, nil
+	}
+	var count int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM schema_migrations WHERE version = ?", version).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func createSchema(tx *sql.Tx) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS schema_migrations (
 			version INTEGER PRIMARY KEY,
@@ -158,6 +215,10 @@ func (s *Service) migrate() error {
 			return fmt.Errorf("create schema: %w", err)
 		}
 	}
+	return nil
+}
+
+func upgradeSchema(tx *sql.Tx) error {
 
 	// Upgrade databases created by the original prototype without discarding data.
 	columns := map[string]map[string]string{
@@ -282,10 +343,19 @@ func (s *Service) migrate() error {
 	if _, err := tx.Exec("INSERT OR IGNORE INTO chat_channels(slug, name, requires_membership) VALUES ('global', 'Global', 0)"); err != nil {
 		return err
 	}
-	if _, err := tx.Exec("INSERT OR IGNORE INTO schema_migrations(version) VALUES (1), (2)"); err != nil {
+	return nil
+}
+
+func removeLegacyAdminFlag(tx *sql.Tx) error {
+	exists, err := hasColumn(tx, "users", "is_admin")
+	if err != nil {
 		return err
 	}
-	return tx.Commit()
+	if !exists {
+		return nil
+	}
+	_, err = tx.Exec("ALTER TABLE users DROP COLUMN is_admin")
+	return err
 }
 
 func hasColumn(tx *sql.Tx, table, column string) (bool, error) {
@@ -309,7 +379,14 @@ func hasColumn(tx *sql.Tx, table, column string) (bool, error) {
 	return false, rows.Err()
 }
 
-func (s *Service) MigrationVersions() ([]int, error) {
+func (s *Store) MigrationVersions() ([]int, error) {
+	var hasTable bool
+	if err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations')").Scan(&hasTable); err != nil {
+		return nil, err
+	}
+	if !hasTable {
+		return []int{}, nil
+	}
 	rows, err := s.db.Query("SELECT version FROM schema_migrations ORDER BY version")
 	if err != nil {
 		return nil, err
@@ -326,7 +403,7 @@ func (s *Service) MigrationVersions() ([]int, error) {
 	return versions, rows.Err()
 }
 
-func (s *Service) Backup(destination string) error {
+func (s *Store) Backup(destination string) error {
 	if strings.TrimSpace(destination) == "" {
 		return fmt.Errorf("backup destination is required")
 	}

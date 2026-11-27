@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
 type commandPermission uint8
@@ -158,43 +159,43 @@ func commandRegistry() []command {
 			Name: "lock", Group: "Moderation", Permission: permissionModerator,
 			Description: "Lock a topic to prevent new replies.",
 			Arguments:   []commandArgument{argument("topic-id", "Topic to lock"), {Name: "reason", Description: "Reason recorded in the moderation log.", Optional: true, Variadic: true}},
-			Handler:     moderationCommand("lock"),
+			Handler:     moderationStatusHandler(service.ThreadLocked),
 		},
 		{
 			Name: "unlock", Group: "Moderation", Permission: permissionModerator,
 			Description: "Reopen a locked topic.",
 			Arguments:   []commandArgument{argument("topic-id", "Topic to reopen"), {Name: "reason", Description: "Reason recorded in the moderation log.", Optional: true, Variadic: true}},
-			Handler:     moderationCommand("unlock"),
+			Handler:     moderationStatusHandler(service.ThreadOpen),
 		},
 		{
 			Name: "pin", Group: "Moderation", Permission: permissionModerator,
 			Description: "Pin a topic.",
 			Arguments:   []commandArgument{argument("topic-id", "Topic to pin"), {Name: "reason", Description: "Reason recorded in the moderation log.", Optional: true, Variadic: true}},
-			Handler:     moderationCommand("pin"),
+			Handler:     moderationPinHandler(true),
 		},
 		{
 			Name: "unpin", Group: "Moderation", Permission: permissionModerator,
 			Description: "Unpin a topic.",
 			Arguments:   []commandArgument{argument("topic-id", "Topic to unpin"), {Name: "reason", Description: "Reason recorded in the moderation log.", Optional: true, Variadic: true}},
-			Handler:     moderationCommand("unpin"),
+			Handler:     moderationPinHandler(false),
 		},
 		{
 			Name: "hide-thread", Group: "Moderation", Permission: permissionModerator,
 			Description: "Hide a topic from ordinary member listings.",
 			Arguments:   []commandArgument{argument("topic-id", "Topic to hide"), {Name: "reason", Description: "Reason recorded in the moderation log.", Optional: true, Variadic: true}},
-			Handler:     moderationCommand("hide-thread"),
+			Handler:     moderationStatusHandler(service.ThreadHidden),
 		},
 		{
 			Name: "restore-thread", Group: "Moderation", Permission: permissionModerator,
 			Description: "Restore a hidden topic.",
 			Arguments:   []commandArgument{argument("topic-id", "Topic to restore"), {Name: "reason", Description: "Reason recorded in the moderation log.", Optional: true, Variadic: true}},
-			Handler:     moderationCommand("restore-thread"),
+			Handler:     moderationStatusHandler(service.ThreadOpen),
 		},
 		{
 			Name: "delete-thread", Group: "Moderation", Permission: permissionModerator,
 			Description: "Delete a topic, recording the reason in the moderation log.",
 			Arguments:   []commandArgument{argument("topic-id", "Topic to delete"), {Name: "reason", Description: "Reason recorded in the moderation log.", Optional: true, Variadic: true}},
-			Handler:     moderationCommand("delete-thread"),
+			Handler:     moderationDeleteHandler(),
 		},
 		{
 			Name: "modlog", Group: "Moderation", Permission: permissionModerator,
@@ -205,20 +206,20 @@ func commandRegistry() []command {
 			Name: "board", Group: "Administration", Permission: permissionAdmin,
 			Description: "Manage forum boards.",
 			Subcommands: []command{
-				{Name: "list", Description: "List boards.", Handler: adminCommand("board", "list")},
-				{Name: "create", Description: "Create a board.", Arguments: []commandArgument{argument("slug", "Unique board slug."), argument("name", "Display name."), optionalArgument("description", "Board description.")}, Handler: adminCommand("board", "create")},
-				{Name: "update", Description: "Update a board's name and description.", Arguments: []commandArgument{argument("slug", "Board slug."), argument("name", "New display name."), argument("description", "New description.")}, Handler: adminCommand("board", "update")},
-				{Name: "archive", Description: "Archive a board.", Arguments: []commandArgument{{Name: "slug", Description: "Board slug.", Completion: completionBoardSlugs}}, Handler: adminCommand("board", "archive")},
-				{Name: "restore", Description: "Restore an archived board.", Arguments: []commandArgument{{Name: "slug", Description: "Board slug.", Completion: completionBoardSlugs}}, Handler: adminCommand("board", "restore")},
+				{Name: "list", Description: "List boards.", Handler: commandCallNoArgs(func(m *sessionModel) { m.listAdminBoards() })},
+				{Name: "create", Description: "Create a board.", Arguments: []commandArgument{argument("slug", "Unique board slug."), argument("name", "Display name."), optionalArgument("description", "Board description.")}, Handler: commandCall(func(m *sessionModel, args []string) { m.createAdminBoard(args) })},
+				{Name: "update", Description: "Update a board's name and description.", Arguments: []commandArgument{argument("slug", "Board slug."), argument("name", "New display name."), argument("description", "New description.")}, Handler: commandCall(func(m *sessionModel, args []string) { m.updateAdminBoard(args) })},
+				{Name: "archive", Description: "Archive a board.", Arguments: []commandArgument{{Name: "slug", Description: "Board slug.", Completion: completionBoardSlugs}}, Handler: commandCall(func(m *sessionModel, args []string) { m.setAdminBoardStatus(args, service.BoardArchived) })},
+				{Name: "restore", Description: "Restore an archived board.", Arguments: []commandArgument{{Name: "slug", Description: "Board slug.", Completion: completionBoardSlugs}}, Handler: commandCall(func(m *sessionModel, args []string) { m.setAdminBoardStatus(args, service.BoardActive) })},
 			},
 		},
 		{
 			Name: "invite", Group: "Administration", Permission: permissionAdmin,
 			Description: "Manage member invitations.",
 			Subcommands: []command{
-				{Name: "create", Description: "Create an invitation code.", Arguments: []commandArgument{optionalArgument("duration", "Validity period, such as 168h."), {Name: "--admin", Description: "Create an administrator invitation.", Optional: true, Candidates: []string{"--admin"}}}, Handler: adminCommand("invite", "create")},
-				{Name: "list", Description: "List invitation codes and their status.", Handler: adminCommand("invite", "list")},
-				{Name: "revoke", Description: "Revoke an unused invitation code.", Arguments: []commandArgument{{Name: "code", Description: "Invitation code.", Completion: completionInviteCodes}}, Handler: adminCommand("invite", "revoke")},
+				{Name: "create", Description: "Create an invitation code.", Arguments: []commandArgument{optionalArgument("duration", "Validity period, such as 168h."), {Name: "--admin", Description: "Create an administrator invitation.", Optional: true, Candidates: []string{"--admin"}}}, Handler: commandCall(func(m *sessionModel, args []string) { m.createAdminInvite(args) })},
+				{Name: "list", Description: "List invitation codes and their status.", Handler: commandCallNoArgs(func(m *sessionModel) { m.listAdminInvites() })},
+				{Name: "revoke", Description: "Revoke an unused invitation code.", Arguments: []commandArgument{{Name: "code", Description: "Invitation code.", Completion: completionInviteCodes}}, Handler: commandCall(func(m *sessionModel, args []string) { m.revokeAdminInvite(args) })},
 			},
 		},
 		{
@@ -230,9 +231,9 @@ func commandRegistry() []command {
 			Name: "user", Group: "Administration", Permission: permissionAdmin,
 			Description: "Manage member roles and account status.",
 			Subcommands: []command{
-				{Name: "role", Description: "Change a member's role.", Arguments: []commandArgument{{Name: "username", Description: "Member to update.", Completion: completionUsernames}, {Name: "role", Description: "New role.", Candidates: []string{"admin", "member", "moderator"}}}, Handler: adminCommand("user", "role")},
-				{Name: "suspend", Description: "Suspend a member account.", Arguments: []commandArgument{{Name: "username", Description: "Member to suspend.", Completion: completionUsernames}}, Handler: adminCommand("user", "suspend")},
-				{Name: "activate", Description: "Activate a suspended member account.", Arguments: []commandArgument{{Name: "username", Description: "Member to activate.", Completion: completionUsernames}}, Handler: adminCommand("user", "activate")},
+				{Name: "role", Description: "Change a member's role.", Arguments: []commandArgument{{Name: "username", Description: "Member to update.", Completion: completionUsernames}, {Name: "role", Description: "New role.", Candidates: []string{"admin", "member", "moderator"}}}, Handler: commandCall(func(m *sessionModel, args []string) { m.setAdminUserRole(args) })},
+				{Name: "suspend", Description: "Suspend a member account.", Arguments: []commandArgument{{Name: "username", Description: "Member to suspend.", Completion: completionUsernames}}, Handler: commandCall(func(m *sessionModel, args []string) { m.setAdminUserStatus(args, service.StatusSuspended) })},
+				{Name: "activate", Description: "Activate a suspended member account.", Arguments: []commandArgument{{Name: "username", Description: "Member to activate.", Completion: completionUsernames}}, Handler: commandCall(func(m *sessionModel, args []string) { m.setAdminUserStatus(args, service.StatusActive) })},
 			},
 		},
 		{
@@ -246,26 +247,28 @@ func commandRegistry() []command {
 	}
 }
 
-func moderationCommand(name string) commandHandler {
-	return func(m *sessionModel, args []string) (bool, tea.Cmd) {
-		m.moderateThread(append([]string{name}, args...))
-		return false, nil
-	}
+func moderationStatusHandler(status string) commandHandler {
+	return commandCall(func(m *sessionModel, args []string) {
+		m.applyModeration(args, func(id int, reason string) error {
+			return m.boards.SetThreadStatus(m.ctx, id, m.user.ID, status, reason)
+		})
+	})
 }
 
-func adminCommand(parent, subcommand string) commandHandler {
-	return func(m *sessionModel, args []string) (bool, tea.Cmd) {
-		fullArgs := append([]string{subcommand}, args...)
-		switch parent {
-		case "board":
-			m.boardAdmin(fullArgs)
-		case "invite":
-			m.inviteAdmin(fullArgs)
-		case "user":
-			m.userAdmin(fullArgs)
-		}
-		return false, nil
-	}
+func moderationPinHandler(pinned bool) commandHandler {
+	return commandCall(func(m *sessionModel, args []string) {
+		m.applyModeration(args, func(id int, reason string) error {
+			return m.boards.SetThreadPinned(m.ctx, id, m.user.ID, pinned, reason)
+		})
+	})
+}
+
+func moderationDeleteHandler() commandHandler {
+	return commandCall(func(m *sessionModel, args []string) {
+		m.applyModeration(args, func(id int, reason string) error {
+			return m.boards.DeleteThread(m.ctx, id, m.user.ID, reason)
+		})
+	})
 }
 
 func lookupCommand(name string) (command, bool) {
@@ -294,6 +297,14 @@ func lookupSubcommand(parent command, name string) (command, bool) {
 }
 
 func (m *sessionModel) hasPermission(permission commandPermission) bool {
+	// Keep command visibility and help in sync with administrative changes
+	// made while this SSH session is connected. Authorization itself is
+	// independently enforced by service.Session on every mutation.
+	if m.users != nil {
+		if current, err := m.users.GetUserByID(m.ctx, m.user.ID); err == nil {
+			m.user = current
+		}
+	}
 	switch permission {
 	case permissionModerator:
 		return m.isModerator()
@@ -356,4 +367,14 @@ func commandUsage(cmd command, prefix string) string {
 		name += " " + strings.Join(parts, " ")
 	}
 	return name
+}
+
+func requiredArguments(cmd command) int {
+	required := 0
+	for _, arg := range cmd.Arguments {
+		if !arg.Optional && !arg.Variadic {
+			required++
+		}
+	}
+	return required
 }

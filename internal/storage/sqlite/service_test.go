@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"path/filepath"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
-	"go.uber.org/zap"
 )
 
 func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
@@ -49,59 +49,68 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store, err := Open(zap.NewNop(), dbPath)
+	store, err := Open(dbPath)
+	if err == nil { err = store.Migrate() }
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 
-	board, err := store.GetBoardBySlug("general-discussion")
+	board, err := store.GetBoardBySlug(context.Background(), "general-discussion")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if board.Name != "General Discussion" || board.Status != service.BoardActive {
 		t.Fatalf("unexpected migrated board: %+v", board)
 	}
-	thread, err := store.GetThreadByID(1)
+	thread, err := store.GetThreadByID(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if thread.Body != "Original body" || len(thread.Comments) != 1 || thread.Comments[0].Body != "Legacy reply" {
-		t.Fatalf("legacy topic data was not preserved: %+v", thread)
+	if thread.Body != "Original body" {
+		t.Fatalf("legacy topic body was not preserved: %+v", thread)
+	}
+	comments, total, err := store.ListCommentsPage(context.Background(), thread.ID, 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(comments) != 1 || comments[0].Body != "Legacy reply" {
+		t.Fatalf("legacy reply data was not preserved: total=%d comments=%+v", total, comments)
 	}
 }
 
 func TestForumWriteOperations(t *testing.T) {
-	store, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "service.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "service.db"))
+	if err == nil { err = store.Migrate() }
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 
-	if err := store.CreateBoardWithDetails("general", "General", "General discussion", 0, 0); err != nil {
+	if err := store.CreateBoardWithDetails(context.Background(), "general", "General", "General discussion", 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.db.Exec("INSERT INTO invites(code, created_at, expires_at) VALUES('test-invite', ?, ?)", nowText(), "9999-12-31T23:59:59Z"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.db.Exec(`INSERT INTO users(username, pubkey, invite_code, role, status, created_at)
-		VALUES('alice', x'01', 'test-invite', 'member', 'active', ?)`, nowText()); err != nil {
+		VALUES('alice', x'01', 'test-invite', 'moderator', 'active', ?)`, nowText()); err != nil {
 		t.Fatal(err)
 	}
 
-	board, err := store.GetBoardBySlug("general")
+	board, err := store.GetBoardBySlug(context.Background(), "general")
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := store.CreateThreadWithBody("Test topic", "Initial post", board.ID, 1)
+	id, err := store.CreateThreadWithBody(context.Background(), "Test topic", "Initial post", board.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateComment(id, 1, "A reply"); err != nil {
+	if err := store.CreateComment(context.Background(), id, 1, "A reply"); err != nil {
 		t.Fatal(err)
 	}
 
-	topics, total, err := store.ListThreadsPage(board.ID, 1, 20)
+	topics, total, err := store.ListThreadsPage(context.Background(), board.ID, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,20 +118,51 @@ func TestForumWriteOperations(t *testing.T) {
 		t.Fatalf("unexpected topic listing: total=%d topics=%+v", total, topics)
 	}
 
-	if err := store.SetThreadStatus(id, 1, service.ThreadLocked, "test lock"); err != nil {
+	appSession := service.NewSession(1, store, store, nil)
+	if err := appSession.SetThreadStatus(context.Background(), id, 1, service.ThreadLocked, "test lock"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateComment(id, 1, "A reply after locking"); !errors.Is(err, service.ErrThreadLocked) {
+	if err := appSession.CreateComment(context.Background(), id, 1, "A reply after locking"); !errors.Is(err, service.ErrThreadLocked) {
 		t.Fatalf("expected locked topic error, got %v", err)
 	}
 
-	if err := store.DeleteThread(id, 1, false, ""); err != nil {
+	if err := appSession.DeleteThread(context.Background(), id, 1, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetThreadStatus(id, 1, service.ThreadOpen, "restore"); err != nil {
+	if err := appSession.SetThreadStatus(context.Background(), id, 1, service.ThreadOpen, "restore"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.GetThreadByID(id); err != nil {
+	if _, err := appSession.GetThreadByID(context.Background(), id); err != nil {
 		t.Fatalf("restored topic should be readable: %v", err)
+	}
+}
+
+
+func TestOpenDoesNotApplyMigrations(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "unmigrated.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	versions, err := store.MigrationVersions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 0 {
+		t.Fatalf("Open applied migrations unexpectedly: %v", versions)
+	}
+	if err := store.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	versions, err = store.MigrationVersions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != len(migrations) {
+		t.Fatalf("applied migrations = %v, want %d versions", versions, len(migrations))
+	}
+	if err := store.Migrate(); err != nil {
+		t.Fatalf("reapplying migrations should be a no-op: %v", err)
 	}
 }

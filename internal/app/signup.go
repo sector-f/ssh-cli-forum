@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func handleSignup(logger *zap.Logger, s ssh.Session, users service.UserService) error {
+func handleSignup(logger *zap.Logger, s ssh.Session, accounts *service.AccountService) error {
 	rlConfig := &readline.Config{
 		HistoryFile:  "",
 		HistoryLimit: 0,
@@ -62,7 +62,7 @@ func handleSignup(logger *zap.Logger, s ssh.Session, users service.UserService) 
 
 	logger = logger.With(zap.String("username", newUsername))
 
-	err = users.CreateUser(newUsername, s.PublicKey(), inviteCode)
+	err = accounts.RegisterUser(s.Context(), newUsername, s.PublicKey().Marshal(), inviteCode)
 	if err != nil {
 		logger.Warn("Failed to create user", zap.Error(err))
 	}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/charmbracelet/ssh"
 )
 
 const SignupUsername = "signup"
@@ -30,60 +29,88 @@ var (
 	ErrReadOnly         = errors.New("this board is read-only")
 	ErrThreadLocked     = errors.New("this topic is locked")
 	ErrAdminExists      = errors.New("an administrator account already exists")
+	ErrLastAdmin        = errors.New("cannot remove the last administrator")
+	ErrInvalidRole      = errors.New("role must be member, moderator, or admin")
+	ErrInvalidStatus       = errors.New("status must be active or suspended")
+	ErrInvalidBoardSlug   = errors.New("invalid board slug")
+	ErrEmptyBoardName     = errors.New("board name cannot be empty")
+	ErrInvalidBoardStatus = errors.New("board status must be active, read_only, or archived")
+	ErrInvalidThreadStatus = errors.New("invalid topic status")
+	ErrEmptyThreadTitle   = errors.New("topic title cannot be empty")
+	ErrEmptyCommentBody   = errors.New("reply cannot be empty")
 
 	ErrUnknown = errors.New("unknown error")
 )
 
-type UserService interface {
-	CreateInvite(code string, expiresAt time.Time, isAdmin bool) error
-	ListInvites() ([]Invite, error)
-	GetInvite(code string) (Invite, error)
-	RevokeInvite(code string) error
+type AccountStore interface {
+	CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error
+	GetInvite(ctx context.Context, code string) (Invite, error)
+	CreateUser(ctx context.Context, username string, pubKey []byte, inviteCode, role string) error
+	BootstrapAdmin(ctx context.Context, username string, pubKey []byte) error
+	GetUserByUsername(ctx context.Context, username string) (User, error)
+	ListUsers(ctx context.Context) ([]User, error)
+	SetUserRole(ctx context.Context, username, role string) error
+	SetUserStatus(ctx context.Context, username, status string) error
+}
 
-	CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) error
-	BootstrapAdmin(username string, pubKey ssh.PublicKey) error
-	GetUserByID(id int) (User, error)
-	GetUserByUsername(username string) (User, error)
-	AuthenticateUser(username string, givenKey ssh.PublicKey) bool
-	ListUsers() ([]User, error)
-	SetUserRole(username, role string) error
-	SetUserStatus(username, status string) error
+type UserService interface {
+	AccountStore
+	ListInvites(ctx context.Context) ([]Invite, error)
+	RevokeInvite(ctx context.Context, code string) error
+	GetUserByID(ctx context.Context, id int) (User, error)
+	AuthenticateUser(ctx context.Context, username string, givenKey []byte) (bool, error)
+}
+type BoardAdminStore interface {
+	CreateBoardWithDetails(ctx context.Context, slug, name, description string, sortOrder, createdBy int) error
+	UpdateBoard(ctx context.Context, slug, name, description string) error
+	SetBoardStatus(ctx context.Context, slug, status string) error
 }
 
 type BoardService interface {
-	// Compatibility methods retained for callers from the original prototype.
-	CreateBoard(name string) error
-	ListBoards() ([]BoardListing, error)
-	GetBoardByID(id int) (Board, error)
-	CreateThread(title string, boardID, authorID int) error
-	ListThreads(boardID int) ([]ThreadListing, error)
-	GetThreadByID(id int) (Thread, error)
-	CreateComment(threadID, authorID int, body string) error
-	ListComments(threadID int) ([]Comment, error)
-
-	CreateBoardWithDetails(slug, name, description string, sortOrder, createdBy int) error
-	GetBoardBySlug(slug string) (Board, error)
-	UpdateBoard(slug, name, description string) error
-	SetBoardStatus(slug, status string) error
-
-	CreateThreadWithBody(title, body string, boardID, authorID int) (int, error)
-	ListThreadsPage(boardID, page, pageSize int) ([]ThreadListing, int, error)
-	RecentThreads(limit int) ([]ThreadListing, error)
-	UpdateThread(id, actorID int, title, body string, moderator bool) error
-	DeleteThread(id, actorID int, moderator bool, reason string) error
-	SetThreadPinned(id, actorID int, pinned bool, reason string) error
-	SetThreadStatus(id, actorID int, status, reason string) error
-
-	ListCommentsPage(threadID, page, pageSize int) ([]Comment, int, error)
-	UpdateComment(id, actorID int, body string, moderator bool) error
-	DeleteComment(id, actorID int, moderator bool, reason string) error
-	ListModerationLog(limit int) ([]ModerationEntry, error)
+	BoardAdminStore
+	ListBoards(ctx context.Context) ([]BoardListing, error)
+	GetBoardByID(ctx context.Context, id int) (Board, error)
+	GetBoardBySlug(ctx context.Context, slug string) (Board, error)
+	GetThreadByID(ctx context.Context, id int) (Thread, error)
+	CreateComment(ctx context.Context, threadID, authorID int, body string) error
+	CreateThreadWithBody(ctx context.Context, title, body string, boardID, authorID int) (int, error)
+	ListThreadsPage(ctx context.Context, boardID, page, pageSize int) ([]ThreadListing, int, error)
+	RecentThreads(ctx context.Context, limit int) ([]ThreadListing, error)
+	UpdateThread(ctx context.Context, id int, title, body string) error
+	DeleteThread(ctx context.Context, id, actorID int, reason string) error
+	SetThreadPinned(ctx context.Context, id, actorID int, pinned bool, reason string) error
+	SetThreadStatus(ctx context.Context, id, actorID int, status, reason string) error
+	ListCommentsPage(ctx context.Context, threadID, page, pageSize int) ([]Comment, int, error)
+	GetCommentByID(ctx context.Context, id int) (Comment, error)
+	UpdateComment(ctx context.Context, id int, body string) error
+	DeleteComment(ctx context.Context, id, actorID int, reason string) error
+	ListModerationLog(ctx context.Context, limit int) ([]ModerationEntry, error)
 }
-
 // ChatService provides persistent channel history and independent live-event
 // subscriptions. Consumers may subscribe independently of their current view.
+type UserSession interface {
+	GetUserByID(ctx context.Context, id int) (User, error)
+	GetUserByUsername(ctx context.Context, username string) (User, error)
+	ListInvites(ctx context.Context) ([]Invite, error)
+	RevokeInvite(ctx context.Context, code string) error
+	ListUsers(ctx context.Context) ([]User, error)
+	CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error
+	SetUserRole(ctx context.Context, username, role string) error
+	SetUserStatus(ctx context.Context, username, status string) error
+}
+
+// BoardSession is the application-facing forum contract. Session implements
+// its mutations with actor authorization rather than exposing the store.
+type BoardSession interface {
+	BoardService
+}
+
+type ChatStore interface {
+	RecentMessages(ctx context.Context, channelSlug string, limit int) ([]ChatMessage, error)
+	PostMessage(ctx context.Context, channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error)
+}
+
 type ChatService interface {
-	RecentMessages(channelSlug string, limit int) ([]ChatMessage, error)
-	PostMessage(channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error)
+	ChatStore
 	Subscribe(ctx context.Context, channelSlug string) (<-chan ChatMessage, func())
 }
