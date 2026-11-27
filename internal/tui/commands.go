@@ -300,8 +300,10 @@ func (m *sessionModel) hasPermission(permission commandPermission) bool {
 	// Keep command visibility and help in sync with administrative changes
 	// made while this SSH session is connected. Authorization itself is
 	// independently enforced by service.Session on every mutation.
-	if current, err := m.users.GetUserByID(m.ctx, m.user.ID); err == nil {
-		m.user = current
+	if m.users != nil {
+		if current, err := m.users.GetUserByID(m.ctx, m.user.ID); err == nil {
+			m.user = current
+		}
 	}
 	switch permission {
 	case permissionModerator:
