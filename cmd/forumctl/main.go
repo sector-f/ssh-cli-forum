@@ -213,7 +213,7 @@ func inviteCommand() *cobra.Command {
 			}
 			expires := time.Now().Add(duration)
 			return withDB(func(s *sqlite.Store) error {
-				if err := service.NewAccountService(s).CreateInvite(cmd.Context(), code, expires, false); err != nil {
+				if err := service.NewAccountService(s).CreateInvite(cmd.Context(), code, expires); err != nil {
 					return err
 				}
 				fmt.Printf("Invitation created\nCode:    %s\nExpires: %s\n", code, expires.UTC().Format(time.RFC3339))
