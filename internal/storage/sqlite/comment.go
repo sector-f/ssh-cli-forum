@@ -25,20 +25,6 @@ func (s *Store) CreateComment(ctx context.Context, threadID, authorID int, body 
 	return tx.Commit()
 }
 
-func (s *Store) ListComments(ctx context.Context, threadID int) ([]service.Comment, error) {
-	var all []service.Comment
-	for page := 1; ; page++ {
-		comments, total, err := s.ListCommentsPage(ctx, threadID, page, 100)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, comments...)
-		if len(all) >= total || len(comments) == 0 {
-			return all, nil
-		}
-	}
-}
-
 func (s *Store) ListCommentsPage(ctx context.Context, threadID, page, pageSize int) ([]service.Comment, int, error) {
 	if page < 1 {
 		page = 1

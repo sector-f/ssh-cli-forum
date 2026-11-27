@@ -102,7 +102,4 @@ type ModerationEntry struct {
 	CreatedAt  time.Time
 }
 
-type Message interface {
-	Time() time.Time
-	Body() string
-}
+

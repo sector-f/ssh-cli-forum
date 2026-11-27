@@ -13,9 +13,6 @@ type Store struct {
 	db *sql.DB
 }
 
-// Service is retained as a source-compatible alias for previous callers.
-type Service = Store
-
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on&_busy_timeout=5000")
 	if err != nil {

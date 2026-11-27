@@ -18,10 +18,10 @@ var validUsername = regexp.MustCompile("^[A-Za-z0-9_-]+$")
 // AccountService implements account and invitation use cases. UserService is
 // deliberately a persistence contract; policy belongs here.
 type AccountService struct {
-	users UserService
+	users AccountStore
 }
 
-func NewAccountService(users UserService) *AccountService {
+func NewAccountService(users AccountStore) *AccountService {
 	return &AccountService{users: users}
 }
 
@@ -69,7 +69,7 @@ func (s *AccountService) BootstrapAdmin(ctx context.Context, username string, pu
 	if err := ValidateUsername(username); err != nil {
 		return err
 	}
-	if pubKey == nil {
+	if len(pubKey) == 0 {
 		return ErrUsernameInvalid
 	}
 	users, err := s.users.ListUsers(ctx)
@@ -98,12 +98,12 @@ func (s *AccountService) SetUserRole(ctx context.Context, username, role string)
 	if role != RoleMember && role != RoleModerator && role != RoleAdmin {
 		return ErrInvalidRole
 	}
-	target, err := s.users.GetUserByUsername(username)
+	target, err := s.users.GetUserByUsername(ctx, username)
 	if err != nil {
 		return err
 	}
 	if (target.Role == RoleAdmin) && role != RoleAdmin {
-		users, err := s.users.ListUsers()
+		users, err := s.users.ListUsers(ctx)
 		if err != nil {
 			return err
 		}
@@ -129,7 +129,7 @@ func (s *AccountService) SetUserStatus(ctx context.Context, username, status str
 		return err
 	}
 	if (target.Role == RoleAdmin) && status == StatusSuspended {
-		users, err := s.users.ListUsers()
+		users, err := s.users.ListUsers(ctx)
 		if err != nil {
 			return err
 		}

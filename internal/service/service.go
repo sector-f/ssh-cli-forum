@@ -42,38 +42,37 @@ var (
 	ErrUnknown = errors.New("unknown error")
 )
 
-type UserService interface {
+type AccountStore interface {
 	CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error
-	ListInvites(ctx context.Context) ([]Invite, error)
 	GetInvite(ctx context.Context, code string) (Invite, error)
-	RevokeInvite(ctx context.Context, code string) error
-
 	CreateUser(ctx context.Context, username string, pubKey []byte, inviteCode, role string) error
 	BootstrapAdmin(ctx context.Context, username string, pubKey []byte) error
-	GetUserByID(ctx context.Context, id int) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
-	AuthenticateUser(ctx context.Context, username string, givenKey []byte) (bool, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	SetUserRole(ctx context.Context, username, role string) error
 	SetUserStatus(ctx context.Context, username, status string) error
 }
 
-type BoardService interface {
-	// Compatibility methods retained for callers from the original prototype.
-	CreateBoard(ctx context.Context, name string) error
-	ListBoards(ctx context.Context) ([]BoardListing, error)
-	GetBoardByID(ctx context.Context, id int) (Board, error)
-	CreateThread(ctx context.Context, title string, boardID, authorID int) error
-	ListThreads(ctx context.Context, boardID int) ([]ThreadListing, error)
-	GetThreadByID(ctx context.Context, id int) (Thread, error)
-	CreateComment(ctx context.Context, threadID, authorID int, body string) error
-	ListComments(ctx context.Context, threadID int) ([]Comment, error)
-
+type UserService interface {
+	AccountStore
+	ListInvites(ctx context.Context) ([]Invite, error)
+	RevokeInvite(ctx context.Context, code string) error
+	GetUserByID(ctx context.Context, id int) (User, error)
+	AuthenticateUser(ctx context.Context, username string, givenKey []byte) (bool, error)
+}
+type BoardAdminStore interface {
 	CreateBoardWithDetails(ctx context.Context, slug, name, description string, sortOrder, createdBy int) error
-	GetBoardBySlug(ctx context.Context, slug string) (Board, error)
 	UpdateBoard(ctx context.Context, slug, name, description string) error
 	SetBoardStatus(ctx context.Context, slug, status string) error
+}
 
+type BoardService interface {
+	BoardAdminStore
+	ListBoards(ctx context.Context) ([]BoardListing, error)
+	GetBoardByID(ctx context.Context, id int) (Board, error)
+	GetBoardBySlug(ctx context.Context, slug string) (Board, error)
+	GetThreadByID(ctx context.Context, id int) (Thread, error)
+	CreateComment(ctx context.Context, threadID, authorID int, body string) error
 	CreateThreadWithBody(ctx context.Context, title, body string, boardID, authorID int) (int, error)
 	ListThreadsPage(ctx context.Context, boardID, page, pageSize int) ([]ThreadListing, int, error)
 	RecentThreads(ctx context.Context, limit int) ([]ThreadListing, error)
@@ -81,14 +80,12 @@ type BoardService interface {
 	DeleteThread(ctx context.Context, id, actorID int, reason string) error
 	SetThreadPinned(ctx context.Context, id, actorID int, pinned bool, reason string) error
 	SetThreadStatus(ctx context.Context, id, actorID int, status, reason string) error
-
 	ListCommentsPage(ctx context.Context, threadID, page, pageSize int) ([]Comment, int, error)
 	GetCommentByID(ctx context.Context, id int) (Comment, error)
 	UpdateComment(ctx context.Context, id int, body string) error
 	DeleteComment(ctx context.Context, id, actorID int, reason string) error
 	ListModerationLog(ctx context.Context, limit int) ([]ModerationEntry, error)
 }
-
 // ChatService provides persistent channel history and independent live-event
 // subscriptions. Consumers may subscribe independently of their current view.
 type ChatStore interface {

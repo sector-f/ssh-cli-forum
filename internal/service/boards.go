@@ -8,10 +8,10 @@ import (
 // BoardManager provides board-administration use cases over the persistence
 // contract. It keeps normalization and validation out of the SQLite store.
 type BoardManager struct {
-	boards BoardService
+	boards BoardAdminStore
 }
 
-func NewBoardManager(boards BoardService) *BoardManager {
+func NewBoardManager(boards BoardAdminStore) *BoardManager {
 	return &BoardManager{boards: boards}
 }
 

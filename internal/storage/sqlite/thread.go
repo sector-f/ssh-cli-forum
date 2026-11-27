@@ -8,11 +8,6 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Store) CreateThread(ctx context.Context, title string, boardID, authorID int) error {
-	_, err := s.CreateThreadWithBody(ctx, title, "", boardID, authorID)
-	return err
-}
-
 func (s *Store) CreateThreadWithBody(ctx context.Context, title, body string, boardID, authorID int) (int, error) {
 	res, err := s.db.ExecContext(ctx, `INSERT INTO threads (title, board_id, author_id, body, created_at, updated_at, last_activity_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`, title, boardID, authorID, body, nowText(), nowText(), nowText())
@@ -65,20 +60,6 @@ func (s *Store) GetThreadByID(ctx context.Context, id int) (service.Thread, erro
 		CreatedAt: listing.CreatedAt, UpdatedAt: listing.UpdatedAt,
 		LastActivityAt: listing.LastActivityAt,
 	}, nil
-}
-
-func (s *Store) ListThreads(ctx context.Context, boardID int) ([]service.ThreadListing, error) {
-	var all []service.ThreadListing
-	for page := 1; ; page++ {
-		threads, total, err := s.ListThreadsPage(ctx, boardID, page, 100)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, threads...)
-		if len(all) >= total || len(threads) == 0 {
-			return all, nil
-		}
-	}
 }
 
 func (s *Store) ListThreadsPage(ctx context.Context, boardID, page, pageSize int) ([]service.ThreadListing, int, error) {
