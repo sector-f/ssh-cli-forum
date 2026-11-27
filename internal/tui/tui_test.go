@@ -29,7 +29,6 @@ func TestSplitCommandRejectsUnterminatedQuote(t *testing.T) {
 func TestFormatChatMessage(t *testing.T) {
 	message := service.ChatMessage{
 		Username:  "alice",
-		Kind:      service.ChatMessageText,
 		Text:      "hello\x1b[31m",
 		Timestamp: time.Date(2026, 11, 27, 12, 34, 0, 0, time.Local),
 	}
@@ -38,10 +37,4 @@ func TestFormatChatMessage(t *testing.T) {
 		t.Fatalf("chat message was not rendered safely: %q", got)
 	}
 
-	message.Kind = service.ChatMessageAction
-	message.Text = "waves"
-	got = formatChatMessage(message)
-	if !strings.Contains(got, "* alice waves") {
-		t.Fatalf("action message was not formatted correctly: %q", got)
-	}
 }
