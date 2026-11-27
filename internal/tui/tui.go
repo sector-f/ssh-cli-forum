@@ -128,6 +128,13 @@ type chatEventMsg struct {
 	ok         bool
 }
 
+type chatHistoryMsg struct {
+	generation uint64
+	messages   []service.ChatMessage
+	trigger    service.ChatMessage
+	err        error
+}
+
 func waitForChatMessage(generation uint64, events <-chan service.ChatMessage) tea.Cmd {
 	return func() tea.Msg {
 		message, ok := <-events
@@ -162,8 +169,22 @@ func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chatCancel = nil
 			return m, nil
 		}
-		m.appendChatMessage(msg.message)
-		return m, waitForChatMessage(m.chatGeneration, m.chatEvents)
+		return m, tea.Batch(m.appendChatMessage(msg.message), waitForChatMessage(m.chatGeneration, m.chatEvents))
+
+	case chatHistoryMsg:
+		if !m.chatActive || msg.generation != m.chatGeneration {
+			return m, nil
+		}
+		wasAtBottom := m.chatViewport.AtBottom()
+		if msg.err != nil {
+			m.chatStatus = "Missed messages; history reload failed."
+			m.appendChatMessageNow(msg.trigger)
+			return m, nil
+		}
+		m.chatMessages = msg.messages
+		m.chatStatus = "Recovered missed messages from history."
+		m.refreshChatViewport(wasAtBottom)
+		return m, nil
 
 	case tea.MouseMsg:
 		if m.chatActive {
@@ -361,7 +382,34 @@ func (m *sessionModel) handleChatInput(line string) tea.Cmd {
 	return nil
 }
 
-func (m *sessionModel) appendChatMessage(message service.ChatMessage) {
+func (m *sessionModel) appendChatMessage(message service.ChatMessage) tea.Cmd {
+	latestID := m.latestChatMessageID()
+	if latestID > 0 && message.ID > latestID+1 && m.chat != nil {
+		generation := m.chatGeneration
+		return func() tea.Msg {
+			messages, err := m.chat.RecentMessages(service.GlobalChatChannel, 500)
+			return chatHistoryMsg{generation: generation, messages: messages, trigger: message, err: err}
+		}
+	}
+	m.appendChatMessageNow(message)
+	return nil
+}
+
+func (m *sessionModel) latestChatMessageID() int64 {
+	var latest int64
+	for _, message := range m.chatMessages {
+		if message.ID > latest {
+			latest = message.ID
+		}
+	}
+	return latest
+}
+
+
+func (m *sessionModel) appendChatMessageNow(message service.ChatMessage) {
+	if message.ID == 0 {
+		return
+	}
 	for _, existing := range m.chatMessages {
 		if existing.ID == message.ID {
 			return
