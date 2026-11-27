@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	GlobalChatChannel = "global"
+	GlobalChatChannel    = "global"
 	ChatMessageMaxLength = 1000
 )
 

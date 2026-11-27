@@ -23,13 +23,13 @@ var (
 	ErrInviteInvalid = errors.New("invalid invite code")
 	ErrInviteRevoked = errors.New("invite code has been revoked")
 
-	ErrBoardNotFound  = errors.New("board not found")
-	ErrThreadNotFound = errors.New("topic not found")
-	ErrCommentNotFound = errors.New("reply not found")
+	ErrBoardNotFound    = errors.New("board not found")
+	ErrThreadNotFound   = errors.New("topic not found")
+	ErrCommentNotFound  = errors.New("reply not found")
 	ErrPermissionDenied = errors.New("permission denied")
-	ErrReadOnly        = errors.New("this board is read-only")
-	ErrThreadLocked    = errors.New("this topic is locked")
-	ErrAdminExists     = errors.New("an administrator account already exists")
+	ErrReadOnly         = errors.New("this board is read-only")
+	ErrThreadLocked     = errors.New("this topic is locked")
+	ErrAdminExists      = errors.New("an administrator account already exists")
 
 	ErrUnknown = errors.New("unknown error")
 )
@@ -79,7 +79,6 @@ type BoardService interface {
 	DeleteComment(id, actorID int, moderator bool, reason string) error
 	ListModerationLog(limit int) ([]ModerationEntry, error)
 }
-
 
 // ChatService provides persistent channel history and independent live-event
 // subscriptions. Consumers may subscribe independently of their current view.

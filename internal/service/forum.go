@@ -20,13 +20,13 @@ const (
 )
 
 type Invite struct {
-	Code      string
-	CreatedAt time.Time
-	ExpiresAt time.Time
-	IsAdmin   bool
+	Code       string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	IsAdmin    bool
 	RedeemedBy string
 	RedeemedAt time.Time
-	RevokedAt time.Time
+	RevokedAt  time.Time
 }
 
 type User struct {

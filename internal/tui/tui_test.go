@@ -11,9 +11,13 @@ import (
 
 func TestSplitCommandQuotedArguments(t *testing.T) {
 	got, err := splitCommand(`board create general "General Discussion" "All topics here"`)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := []string{"board", "create", "general", "General Discussion", "All topics here"}
-	if !reflect.DeepEqual(got, want) { t.Fatalf("splitCommand() = %#v, want %#v", got, want) }
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("splitCommand() = %#v, want %#v", got, want)
+	}
 }
 
 func TestSplitCommandRejectsUnterminatedQuote(t *testing.T) {
@@ -24,9 +28,9 @@ func TestSplitCommandRejectsUnterminatedQuote(t *testing.T) {
 
 func TestFormatChatMessage(t *testing.T) {
 	message := service.ChatMessage{
-		Username: "alice",
-		Kind: service.ChatMessageText,
-		Text: "hello\x1b[31m",
+		Username:  "alice",
+		Kind:      service.ChatMessageText,
+		Text:      "hello\x1b[31m",
 		Timestamp: time.Date(2026, 11, 27, 12, 34, 0, 0, time.Local),
 	}
 	got := formatChatMessage(message)
