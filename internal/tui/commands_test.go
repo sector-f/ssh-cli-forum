@@ -9,7 +9,7 @@ import (
 
 func TestCommandRegistryMetadata(t *testing.T) {
 	seen := make(map[string]bool)
-	for _, cmd := range commandRegistry {
+	for _, cmd := range commandRegistry() {
 		if cmd.Name == "" || cmd.Description == "" || cmd.Group == "" {
 			t.Errorf("command metadata is incomplete: %+v", cmd)
 		}
