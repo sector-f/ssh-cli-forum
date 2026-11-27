@@ -774,12 +774,6 @@ func (m *sessionModel) handleComposition(line string) {
 		m.draftTitle = strings.TrimSpace(line)
 		m.compose = composeNewBody
 		m.addOutput("Topic body. Enter a single '.' on a line to finish; use /cancel to abort.")
-	case composeEditTitle:
-		if strings.TrimSpace(line) != "" {
-			m.draftTitle = strings.TrimSpace(line)
-		}
-		m.compose = composeEditBody
-		m.addOutput("Topic body. Enter a single '.' on a line to finish; use /cancel to abort.")
 	case composeNewBody, composeReplyBody:
 		if line == "." {
 			m.finishComposition()
