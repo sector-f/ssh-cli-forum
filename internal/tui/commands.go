@@ -72,7 +72,8 @@ func commandCallNoArgs(fn func(*sessionModel)) commandHandler {
 
 var commandGroupOrder = []string{"General", "Navigation", "Posting", "Moderation", "Administration"}
 
-var commandRegistry = []command{
+func commandRegistry() []command {
+	return []command{
 	{
 		Name: "help", Aliases: []string{"?"}, Group: "General",
 		Description: "Show available commands or detailed help for a command.",
@@ -242,6 +243,7 @@ var commandRegistry = []command{
 			return true, nil
 		},
 	},
+	}
 }
 
 func moderationCommand(name string) commandHandler {
@@ -268,7 +270,7 @@ func adminCommand(parent, subcommand string) commandHandler {
 
 func lookupCommand(name string) (command, bool) {
 	name = strings.ToLower(name)
-	for _, candidate := range commandRegistry {
+	for _, candidate := range commandRegistry() {
 		if strings.EqualFold(candidate.Name, name) {
 			return candidate, true
 		}
@@ -322,7 +324,7 @@ func commandPermissionName(permission commandPermission) string {
 
 func commandNamesForUser(m *sessionModel) []string {
 	var names []string
-	for _, candidate := range commandRegistry {
+	for _, candidate := range commandRegistry() {
 		if !m.hasPermission(candidate.Permission) {
 			continue
 		}
