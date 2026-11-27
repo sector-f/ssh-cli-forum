@@ -75,8 +75,13 @@ func (s *Service) GetThreadByID(id int) (forum.Thread, error) {
 }
 
 func (s *Service) ListThreads(boardID int) ([]forum.ThreadListing, error) {
-	threads, _, err := s.ListThreadsPage(boardID, 1, 1000000)
-	return threads, err
+	var all []forum.ThreadListing
+	for page := 1; ; page++ {
+		threads, total, err := s.ListThreadsPage(boardID, page, 100)
+		if err != nil { return nil, err }
+		all = append(all, threads...)
+		if len(all) >= total || len(threads) == 0 { return all, nil }
+	}
 }
 
 func (s *Service) ListThreadsPage(boardID, page, pageSize int) ([]forum.ThreadListing, int, error) {

@@ -30,8 +30,13 @@ func (s *Service) CreateComment(threadID, authorID int, body string) error {
 }
 
 func (s *Service) ListComments(threadID int) ([]forum.Comment, error) {
-	comments, _, err := s.ListCommentsPage(threadID, 1, 1000000)
-	return comments, err
+	var all []forum.Comment
+	for page := 1; ; page++ {
+		comments, total, err := s.ListCommentsPage(threadID, page, 100)
+		if err != nil { return nil, err }
+		all = append(all, comments...)
+		if len(all) >= total || len(comments) == 0 { return all, nil }
+	}
 }
 
 func (s *Service) ListCommentsPage(threadID, page, pageSize int) ([]forum.Comment, int, error) {

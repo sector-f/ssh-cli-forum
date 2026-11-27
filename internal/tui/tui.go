@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -151,6 +152,12 @@ func (m *sessionModel) currentPrompt() string {
 
 func (m *sessionModel) addOutput(value string) {
 	for _, line := range strings.Split(strings.TrimRight(value, "\n"), "\n") {
+		// Forum content is untrusted terminal output. Strip control characters
+		// so posts cannot inject ANSI escape sequences into SSH clients.
+		line = strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) { return -1 }
+			return r
+		}, line)
 		m.output = append(m.output, line)
 	}
 	if len(m.output) > 1200 {
@@ -312,7 +319,9 @@ func (m *sessionModel) printBoardTopics(slug string, page int) {
 	if err != nil { m.fail(err); return }
 	m.addOutput(fmt.Sprintf("%s — %s", b.Name, b.Description))
 	m.addOutput(fmt.Sprintf("Board status: %s", b.Status))
-	m.listTopics([]string{"--page", strconv.Itoa(page)})
+	threads, total, err := m.boards.ListThreadsPage(b.ID, page, 20)
+	if err != nil { m.fail(err); return }
+	m.printThreadList(threads, page, total)
 }
 
 func (m *sessionModel) listTopics(args []string) {
@@ -362,6 +371,15 @@ func (m *sessionModel) showRecent() {
 func (m *sessionModel) showCurrent(args []string) {
 	id, err := m.currentThreadID(args)
 	if err != nil { m.fail(err); return }
+	// An explicit topic ID is a navigation action too: establish its board/topic
+	// context so subsequent commands such as 'reply' work without another cd.
+	if len(args) > 0 && args[0] != "--page" {
+		thread, err := m.boards.GetThreadByID(id)
+		if err != nil { m.fail(err); return }
+		board, err := m.boards.GetBoardByID(thread.BoardID)
+		if err != nil { m.fail(err); return }
+		m.cwd = path.Join("/boards", board.Slug, strconv.Itoa(id))
+	}
 	m.displayThread(id, pageArgument(args))
 }
 
@@ -411,7 +429,10 @@ func (m *sessionModel) changeDirectory(args []string) {
 	switch {
 	case target == "/", target == "/boards", target == "/recent":
 		m.cwd = target
-		if target == "/boards" { if b, err := m.boards.ListBoards(); err == nil { m.printBoards(b) } }
+		if target == "/boards" {
+			if b, err := m.boards.ListBoards(); err == nil { m.printBoards(b) }
+		}
+		if target == "/recent" { m.showRecent() }
 	case strings.HasPrefix(target, "/boards/"):
 		parts := strings.Split(strings.TrimPrefix(target, "/boards/"), "/")
 		if len(parts) == 1 && parts[0] != "" {
@@ -480,6 +501,8 @@ func (m *sessionModel) startEditTopic(args []string) {
 	if err != nil { m.fail(err); return }
 	if t.Author.ID != m.user.ID && !m.isModerator() { m.fail(forum.ErrPermissionDenied); return }
 	m.compose, m.draftThreadID, m.draftTitle = composeEditTitle, id, t.Title
+	board, boardErr := m.boards.GetBoardByID(t.BoardID)
+	if boardErr == nil { m.cwd = path.Join("/boards", board.Slug, strconv.Itoa(id)) }
 	m.draftLines = nil
 	m.addOutput("Enter a replacement title, or leave blank to keep the current title. /cancel aborts.")
 	m.input.Prompt = m.currentPrompt()
