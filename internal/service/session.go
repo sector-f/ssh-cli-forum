@@ -220,12 +220,12 @@ func (s *Session) CreateComment(ctx context.Context, threadID, authorID int, bod
 	return s.BoardService.CreateComment(ctx, threadID, user.ID, body)
 }
 
-func (s *Session) UpdateThread(ctx context.Context, id, actorID int, title, body string) error {
+func (s *Session) UpdateThread(ctx context.Context, id int, title, body string) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return ErrEmptyThreadTitle
 	}
-	user, err := s.requireActorID(ctx, actorID)
+	user, err := s.actor(ctx)
 	if err != nil {
 		return err
 	}
@@ -281,12 +281,12 @@ func (s *Session) SetThreadStatus(ctx context.Context, id, actorID int, status, 
 	return s.BoardService.SetThreadStatus(ctx, id, user.ID, status, reason)
 }
 
-func (s *Session) UpdateComment(ctx context.Context, id, actorID int, body string) error {
+func (s *Session) UpdateComment(ctx context.Context, id int, body string) error {
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return ErrEmptyCommentBody
 	}
-	user, err := s.requireActorID(ctx, actorID)
+	user, err := s.actor(ctx)
 	if err != nil {
 		return err
 	}
