@@ -84,8 +84,7 @@ type UserSession interface {
 	ListInvites(ctx context.Context) ([]Invite, error)
 	RevokeInvite(ctx context.Context, code string) error
 	ListUsers(ctx context.Context) ([]User, error)
-	CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error
-	SetUserRole(ctx context.Context, username, role string) error
+	CreateInvite(ctx context.Context, code string, expiresAt time.Time) error
 	SetUserStatus(ctx context.Context, username, status string) error
 }
 
