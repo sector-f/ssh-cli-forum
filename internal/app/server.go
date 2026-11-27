@@ -81,7 +81,12 @@ func authHandler(logger *zap.Logger, users service.UserService) ssh.PublicKeyHan
 		if username == service.SignupUsername {
 			return true
 		}
-		return users.AuthenticateUser(username, key)
+		authenticated, err := users.AuthenticateUser(username, key.Marshal())
+		if err != nil {
+			logger.Error("Failed to authenticate user", zap.Error(err))
+			return false
+		}
+		return authenticated
 	}
 }
 

@@ -127,7 +127,7 @@ func adminCommand() *cobra.Command {
 				return fmt.Errorf("parse public key: %w", err)
 			}
 			return withDB(func(s *sqlite.Store) error {
-				if err := service.NewAccountService(s).BootstrapAdmin(username, key); err != nil {
+				if err := service.NewAccountService(s).BootstrapAdmin(username, key.Marshal()); err != nil {
 					return err
 				}
 				fmt.Printf("Created initial administrator account: %s\n", username)

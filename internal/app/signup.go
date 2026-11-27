@@ -62,7 +62,7 @@ func handleSignup(logger *zap.Logger, s ssh.Session, accounts *service.AccountSe
 
 	logger = logger.With(zap.String("username", newUsername))
 
-	err = accounts.RegisterUser(newUsername, s.PublicKey(), inviteCode)
+	err = accounts.RegisterUser(newUsername, s.PublicKey().Marshal(), inviteCode)
 	if err != nil {
 		logger.Warn("Failed to create user", zap.Error(err))
 	}

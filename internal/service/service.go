@@ -5,7 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/charmbracelet/ssh"
 )
 
 const SignupUsername = "signup"
@@ -49,11 +48,11 @@ type UserService interface {
 	GetInvite(code string) (Invite, error)
 	RevokeInvite(code string) error
 
-	CreateUser(username string, pubKey ssh.PublicKey, inviteCode, role string) error
-	BootstrapAdmin(username string, pubKey ssh.PublicKey) error
+	CreateUser(username string, pubKey []byte, inviteCode, role string) error
+	BootstrapAdmin(username string, pubKey []byte) error
 	GetUserByID(id int) (User, error)
 	GetUserByUsername(username string) (User, error)
-	AuthenticateUser(username string, givenKey ssh.PublicKey) bool
+	AuthenticateUser(username string, givenKey []byte) (bool, error)
 	ListUsers() ([]User, error)
 	SetUserRole(username, role string) error
 	SetUserStatus(username, status string) error

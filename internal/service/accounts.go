@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/charmbracelet/ssh"
 )
 
 const (
@@ -38,11 +37,11 @@ func ValidateUsername(username string) error {
 	return nil
 }
 
-func (s *AccountService) RegisterUser(username string, pubKey ssh.PublicKey, inviteCode string) error {
+func (s *AccountService) RegisterUser(username string, pubKey []byte, inviteCode string) error {
 	if err := ValidateUsername(username); err != nil {
 		return err
 	}
-	if pubKey == nil {
+	if len(pubKey) == 0 {
 		return ErrUsernameInvalid
 	}
 	invite, err := s.users.GetInvite(inviteCode)
@@ -65,7 +64,7 @@ func (s *AccountService) RegisterUser(username string, pubKey ssh.PublicKey, inv
 	return s.users.CreateUser(username, pubKey, inviteCode, role)
 }
 
-func (s *AccountService) BootstrapAdmin(username string, pubKey ssh.PublicKey) error {
+func (s *AccountService) BootstrapAdmin(username string, pubKey []byte) error {
 	if err := ValidateUsername(username); err != nil {
 		return err
 	}

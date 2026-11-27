@@ -1,29 +1,30 @@
 package sqlite
 
 import (
+	"bytes"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/ssh"
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Store) CreateUser(username string, pubKey ssh.PublicKey, inviteCode, role string) error {
-	if pubKey == nil {
+func (s *Store) CreateUser(username string, pubKey []byte, inviteCode, role string) error {
+	if len(pubKey) == 0 {
 		return fmt.Errorf("public key is required")
 	}
 	_, err := s.db.Exec(`INSERT INTO users (username, pubkey, invite_code, is_admin, role, status, created_at)
 		VALUES (?, ?, ?, ?, ?, 'active', ?)`,
-		username, pubKey.Marshal(), inviteCode, role == service.RoleAdmin, role, nowText())
+		username, pubKey, inviteCode, role == service.RoleAdmin, role, nowText())
 	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unique") {
 		return service.ErrUserExists
 	}
 	return err
 }
 
-func (s *Store) BootstrapAdmin(username string, pubKey ssh.PublicKey) error {
-	if pubKey == nil {
+func (s *Store) BootstrapAdmin(username string, pubKey []byte) error {
+	if len(pubKey) == 0 {
 		return fmt.Errorf("public key is required")
 	}
 	tx, err := s.db.Begin()
@@ -39,7 +40,7 @@ func (s *Store) BootstrapAdmin(username string, pubKey ssh.PublicKey) error {
 		return err
 	}
 	if _, err := tx.Exec(`INSERT INTO users (username, pubkey, invite_code, is_admin, role, status, created_at)
-		VALUES (?, ?, ?, 1, 'admin', 'active', ?)`, username, pubKey.Marshal(), code, nowText()); err != nil {
+		VALUES (?, ?, ?, 1, 'admin', 'active', ?)`, username, pubKey, code, nowText()); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return service.ErrUserExists
 		}
@@ -75,22 +76,26 @@ func scanUser(row *sql.Row) (service.User, error) {
 	return u, nil
 }
 
-func (s *Store) AuthenticateUser(username string, givenKey ssh.PublicKey) bool {
-	if givenKey == nil {
-		return false
+func (s *Store) AuthenticateUser(username string, givenKey []byte) (bool, error) {
+	if len(givenKey) == 0 {
+		return false, nil
 	}
 	var keyBytes []byte
 	var status string
 	err := s.db.QueryRow("SELECT pubkey, status FROM users WHERE username = ? COLLATE NOCASE", username).Scan(&keyBytes, &status)
-	if err != nil || status == service.StatusSuspended {
-		return false
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
 	}
-	dbKey, err := ssh.ParsePublicKey(keyBytes)
-	if err != nil || !ssh.KeysEqual(dbKey, givenKey) {
-		return false
+	if err != nil {
+		return false, fmt.Errorf("load account for authentication: %w", err)
 	}
-	_, _ = s.db.Exec("UPDATE users SET last_seen_at = ? WHERE username = ? COLLATE NOCASE", nowText(), username)
-	return true
+	if status == service.StatusSuspended || !bytes.Equal(keyBytes, givenKey) {
+		return false, nil
+	}
+	if _, err := s.db.Exec("UPDATE users SET last_seen_at = ? WHERE username = ? COLLATE NOCASE", nowText(), username); err != nil {
+		return false, fmt.Errorf("update last-seen timestamp: %w", err)
+	}
+	return true, nil
 }
 
 func (s *Store) ListUsers() ([]service.User, error) {
