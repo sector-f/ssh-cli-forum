@@ -122,7 +122,7 @@ func (s *Session) CreateBoard(name string) error {
 	if _, err := s.requireAdmin(); err != nil {
 		return err
 	}
-	return s.BoardService.CreateBoard(name)
+	return NewBoardManager(s.BoardService).CreateBoard(name)
 }
 
 func (s *Session) CreateBoardWithDetails(slug, name, description string, sortOrder, createdBy int) error {
@@ -133,21 +133,21 @@ func (s *Session) CreateBoardWithDetails(slug, name, description string, sortOrd
 	if createdBy != 0 && createdBy != user.ID {
 		return ErrPermissionDenied
 	}
-	return s.BoardService.CreateBoardWithDetails(slug, name, description, sortOrder, user.ID)
+	return NewBoardManager(s.BoardService).CreateBoardWithDetails(slug, name, description, sortOrder, user.ID)
 }
 
 func (s *Session) UpdateBoard(slug, name, description string) error {
 	if _, err := s.requireAdmin(); err != nil {
 		return err
 	}
-	return s.BoardService.UpdateBoard(slug, name, description)
+	return NewBoardManager(s.BoardService).UpdateBoard(slug, name, description)
 }
 
 func (s *Session) SetBoardStatus(slug, status string) error {
 	if _, err := s.requireAdmin(); err != nil {
 		return err
 	}
-	return s.BoardService.SetBoardStatus(slug, status)
+	return NewBoardManager(s.BoardService).SetBoardStatus(slug, status)
 }
 
 func (s *Session) CreateThread(title string, boardID, authorID int) error {
@@ -167,8 +167,9 @@ func (s *Session) CreateThreadWithBody(title, body string, boardID, authorID int
 	if board.Status != BoardActive {
 		return 0, ErrReadOnly
 	}
-	if strings.TrimSpace(title) == "" {
-		return 0, errors.New("topic title cannot be empty")
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return 0, ErrEmptyThreadTitle
 	}
 	return s.BoardService.CreateThreadWithBody(title, body, boardID, user.ID)
 }
@@ -195,13 +196,18 @@ func (s *Session) CreateComment(threadID, authorID int, body string) error {
 	if thread.Status == ThreadHidden {
 		return ErrThreadNotFound
 	}
-	if strings.TrimSpace(body) == "" {
-		return errors.New("reply cannot be empty")
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ErrEmptyCommentBody
 	}
 	return s.BoardService.CreateComment(threadID, user.ID, body)
 }
 
 func (s *Session) UpdateThread(id, actorID int, title, body string, _ bool) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return ErrEmptyThreadTitle
+	}
 	user, err := s.requireActorID(actorID)
 	if err != nil {
 		return err
@@ -245,6 +251,9 @@ func (s *Session) SetThreadPinned(id, actorID int, pinned bool, reason string) e
 }
 
 func (s *Session) SetThreadStatus(id, actorID int, status, reason string) error {
+	if status != ThreadOpen && status != ThreadLocked && status != ThreadHidden {
+		return ErrInvalidThreadStatus
+	}
 	user, err := s.requireActorID(actorID)
 	if err != nil {
 		return err
@@ -256,6 +265,10 @@ func (s *Session) SetThreadStatus(id, actorID int, status, reason string) error 
 }
 
 func (s *Session) UpdateComment(id, actorID int, body string, _ bool) error {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ErrEmptyCommentBody
+	}
 	user, err := s.requireActorID(actorID)
 	if err != nil {
 		return err

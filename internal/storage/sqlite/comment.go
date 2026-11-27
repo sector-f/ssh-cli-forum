@@ -3,17 +3,12 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
 func (s *Store) CreateComment(threadID, authorID int, body string) error {
-	body = strings.TrimSpace(body)
-	if body == "" {
-		return errors.New("reply cannot be empty")
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -84,10 +79,6 @@ func (s *Store) ListCommentsPage(threadID, page, pageSize int) ([]service.Commen
 }
 
 func (s *Store) UpdateComment(id, actorID int, body string, _ bool) error {
-	body = strings.TrimSpace(body)
-	if body == "" {
-		return errors.New("reply cannot be empty")
-	}
 	_, err = s.db.Exec("UPDATE comments SET body = ?, updated_at = ? WHERE id = ?", body, nowText(), id)
 	return err
 }

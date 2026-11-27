@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
@@ -18,15 +17,8 @@ func (s *Store) CreateBoard(name string) error {
 }
 
 func (s *Store) CreateBoardWithDetails(slug, name, description string, sortOrder, createdBy int) error {
-	slug = slugify(slug)
-	if slug == "" {
-		return errors.New("invalid board slug")
-	}
-	if strings.TrimSpace(name) == "" {
-		return errors.New("board name cannot be empty")
-	}
 	_, err := s.db.Exec(`INSERT INTO boards (slug, name, description, sort_order, status, created_by, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'active', NULLIF(?, 0), ?, ?)`, slug, strings.TrimSpace(name), description, sortOrder, createdBy, nowText(), nowText())
+		VALUES (?, ?, ?, ?, 'active', NULLIF(?, 0), ?, ?)`, slug, name, description, sortOrder, createdBy, nowText(), nowText())
 	return err
 }
 
@@ -72,10 +64,7 @@ func (s *Store) getBoard(column string, value interface{}) (service.Board, error
 }
 
 func (s *Store) UpdateBoard(slug, name, description string) error {
-	if strings.TrimSpace(name) == "" {
-		return errors.New("board name cannot be empty")
-	}
-	res, err := s.db.Exec("UPDATE boards SET name = ?, description = ?, updated_at = ? WHERE slug = ?", strings.TrimSpace(name), description, nowText(), slug)
+	res, err := s.db.Exec("UPDATE boards SET name = ?, description = ?, updated_at = ? WHERE slug = ?", name, description, nowText(), slug)
 	if err != nil {
 		return err
 	}
@@ -87,9 +76,6 @@ func (s *Store) UpdateBoard(slug, name, description string) error {
 }
 
 func (s *Store) SetBoardStatus(slug, status string) error {
-	if status != service.BoardActive && status != service.BoardReadOnly && status != service.BoardArchived {
-		return errors.New("board status must be active, read_only, or archived")
-	}
 	res, err := s.db.Exec("UPDATE boards SET status = ?, updated_at = ? WHERE slug = ?", status, nowText(), slug)
 	if err != nil {
 		return err

@@ -153,7 +153,7 @@ func boardCommand() *cobra.Command {
 			}
 			sortOrder, _ := cmd.Flags().GetInt("sort-order")
 			return withDB(func(s *sqlite.Store) error {
-				if err := s.CreateBoardWithDetails(args[0], args[1], description, sortOrder, 0); err != nil {
+				if err := service.NewBoardManager(s).CreateBoardWithDetails(args[0], args[1], description, sortOrder, 0); err != nil {
 					return err
 				}
 				fmt.Printf("Created board: %s (%s)\n", args[1], args[0])
@@ -183,7 +183,7 @@ func boardCommand() *cobra.Command {
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withDB(func(s *sqlite.Store) error {
-				if err := s.UpdateBoard(args[0], args[1], args[2]); err != nil {
+				if err := service.NewBoardManager(s).UpdateBoard(args[0], args[1], args[2]); err != nil {
 					return err
 				}
 				fmt.Println("Board updated.")
@@ -201,7 +201,7 @@ func boardStatusCommand(name, status string) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withDB(func(s *sqlite.Store) error {
-				if err := s.SetBoardStatus(args[0], status); err != nil {
+				if err := service.NewBoardManager(s).SetBoardStatus(args[0], status); err != nil {
 					return err
 				}
 				fmt.Printf("Board %s status set to %s.\n", args[0], status)

@@ -3,8 +3,6 @@ package sqlite
 import (
 	"database/sql"
 	"errors"
-	"fmt"
-	"strings"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
@@ -15,10 +13,6 @@ func (s *Store) CreateThread(title string, boardID, authorID int) error {
 }
 
 func (s *Store) CreateThreadWithBody(title, body string, boardID, authorID int) (int, error) {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return 0, errors.New("topic title cannot be empty")
-	}
 	res, err := s.db.Exec(`INSERT INTO threads (title, board_id, author_id, body, created_at, updated_at, last_activity_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`, title, boardID, authorID, body, nowText(), nowText(), nowText())
 	if err != nil {
@@ -143,10 +137,6 @@ func (s *Store) RecentThreads(limit int) ([]service.ThreadListing, error) {
 }
 
 func (s *Store) UpdateThread(id, actorID int, title, body string, _ bool) error {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return errors.New("topic title cannot be empty")
-	}
 	_, err := s.db.Exec("UPDATE threads SET title = ?, body = ?, updated_at = ? WHERE id = ?", title, body, nowText(), id)
 	return err
 }
@@ -196,9 +186,6 @@ func (s *Store) SetThreadPinned(id, actorID int, pinned bool, reason string) err
 }
 
 func (s *Store) SetThreadStatus(id, actorID int, status, reason string) error {
-	if status != service.ThreadOpen && status != service.ThreadLocked && status != service.ThreadHidden {
-		return fmt.Errorf("invalid topic status %q", status)
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
