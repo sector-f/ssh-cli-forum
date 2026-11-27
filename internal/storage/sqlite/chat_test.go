@@ -13,9 +13,9 @@ import (
 	"go.uber.org/zap"
 )
 
-func createChatTestUser(t *testing.T, service *Service) int {
+func createChatTestUser(t *testing.T, store *Service) int {
 	t.Helper()
-	if _, err := service.db.Exec("INSERT INTO invites(code, created_at, expires_at) VALUES('chat-invite', ?, ?)",
+	if _, err := store.db.Exec("INSERT INTO invites(code, created_at, expires_at) VALUES('chat-invite', ?, ?)",
 		nowText(), "9999-12-31T23:59:59Z"); err != nil {
 		t.Fatal(err)
 	}
@@ -32,13 +32,13 @@ func createChatTestUser(t *testing.T, service *Service) int {
 
 func TestChatMessagesPersistAndPublish(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "chat.db")
-	service, err := Open(zap.NewNop(), dbPath)
+	store, err := Open(zap.NewNop(), dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	userID := createChatTestUser(t, service)
+	userID := createChatTestUser(t, store)
 
-	events, cancel := service.Subscribe(context.Background(), service.GlobalChatChannel)
+	events, cancel := store.Subscribe(context.Background(), service.GlobalChatChannel)
 	defer cancel()
 
 	for i := 0; i < 105; i++ {
@@ -48,7 +48,7 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 			kind = service.ChatMessageAction
 			body = "waves"
 		}
-		if _, err := service.PostMessage(service.GlobalChatChannel, userID, kind, body); err != nil {
+		if _, err := store.PostMessage(service.GlobalChatChannel, userID, kind, body); err != nil {
 			t.Fatalf("post message %d: %v", i, err)
 		}
 	}
@@ -62,7 +62,7 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 		t.Fatal("subscriber did not receive persisted message")
 	}
 
-	history, err := service.RecentMessages(service.GlobalChatChannel, 100)
+	history, err := store.RecentMessages(service.GlobalChatChannel, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,16 +75,16 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 	if history[99].Kind != service.ChatMessageAction || history[99].Username != "alice" {
 		t.Fatalf("action message was not stored correctly: %+v", history[99])
 	}
-	if err := service.Close(); err != nil {
+	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	service, err = Open(zap.NewNop(), dbPath)
+	store, err = Open(zap.NewNop(), dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer service.Close()
-	history, err = service.RecentMessages(service.GlobalChatChannel, 100)
+	defer store.Close()
+	history, err = store.RecentMessages(service.GlobalChatChannel, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,36 +94,36 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 }
 
 func TestChatRejectsInvalidMessagesAndUnknownChannels(t *testing.T) {
-	service, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "chat.db"))
+	store, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "chat.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer service.Close()
-	userID := createChatTestUser(t, service)
+	defer store.Close()
+	userID := createChatTestUser(t, store)
 
-	if _, err := service.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, "   "); !errors.Is(err, service.ErrChatMessageEmpty) {
+	if _, err := store.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, "   "); !errors.Is(err, service.ErrChatMessageEmpty) {
 		t.Fatalf("empty message error = %v", err)
 	}
-	if _, err := service.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, "line one\nline two"); !errors.Is(err, service.ErrChatMessageInvalid) {
+	if _, err := store.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, "line one\nline two"); !errors.Is(err, service.ErrChatMessageInvalid) {
 		t.Fatalf("multiline message error = %v", err)
 	}
-	if _, err := service.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, strings.Repeat("x", service.ChatMessageMaxLength+1)); !errors.Is(err, service.ErrChatMessageTooLong) {
+	if _, err := store.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, strings.Repeat("x", service.ChatMessageMaxLength+1)); !errors.Is(err, service.ErrChatMessageTooLong) {
 		t.Fatalf("overlong message error = %v", err)
 	}
-	if _, err := service.PostMessage("missing-channel", userID, service.ChatMessageText, "hello"); !errors.Is(err, service.ErrChatChannelNotFound) {
+	if _, err := store.PostMessage("missing-channel", userID, service.ChatMessageText, "hello"); !errors.Is(err, service.ErrChatChannelNotFound) {
 		t.Fatalf("unknown channel error = %v", err)
 	}
 }
 
 func TestChatSubscriptionIsContextBound(t *testing.T) {
-	service, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "chat.db"))
+	store, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "chat.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer service.Close()
+	defer store.Close()
 
 	ctx, cancelContext := context.WithCancel(context.Background())
-	events, _ := service.Subscribe(ctx, service.GlobalChatChannel)
+	events, _ := store.Subscribe(ctx, service.GlobalChatChannel)
 	cancelContext()
 	select {
 	case _, ok := <-events:

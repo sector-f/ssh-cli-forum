@@ -31,14 +31,14 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 	if _, err := db.Exec("INSERT INTO comments(thread_id, author_id, body, posted_at) VALUES(1, 1, 'Legacy reply', ?)", now); err != nil { t.Fatal(err) }
 	if err := db.Close(); err != nil { t.Fatal(err) }
 
-	service, err := Open(zap.NewNop(), dbPath)
+	store, err := Open(zap.NewNop(), dbPath)
 	if err != nil { t.Fatal(err) }
-	defer service.Close()
+	defer store.Close()
 
-	board, err := service.GetBoardBySlug("general-discussion")
+	board, err := store.GetBoardBySlug("general-discussion")
 	if err != nil { t.Fatal(err) }
 	if board.Name != "General Discussion" || board.Status != service.BoardActive { t.Fatalf("unexpected migrated board: %+v", board) }
-	thread, err := service.GetThreadByID(1)
+	thread, err := store.GetThreadByID(1)
 	if err != nil { t.Fatal(err) }
 	if thread.Body != "Original body" || len(thread.Comments) != 1 || thread.Comments[0].Body != "Legacy reply" {
 		t.Fatalf("legacy topic data was not preserved: %+v", thread)
@@ -46,29 +46,29 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 }
 
 func TestForumWriteOperations(t *testing.T) {
-	service, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "service.db"))
+	store, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "service.db"))
 	if err != nil { t.Fatal(err) }
-	defer service.Close()
+	defer store.Close()
 
-	if err := service.CreateBoardWithDetails("general", "General", "General discussion", 0, 0); err != nil { t.Fatal(err) }
-	if _, err := service.db.Exec("INSERT INTO invites(code, created_at, expires_at) VALUES('test-invite', ?, ?)", nowText(), "9999-12-31T23:59:59Z"); err != nil { t.Fatal(err) }
-	if _, err := service.db.Exec(`INSERT INTO users(username, pubkey, invite_code, role, status, created_at)
+	if err := store.CreateBoardWithDetails("general", "General", "General discussion", 0, 0); err != nil { t.Fatal(err) }
+	if _, err := store.db.Exec("INSERT INTO invites(code, created_at, expires_at) VALUES('test-invite', ?, ?)", nowText(), "9999-12-31T23:59:59Z"); err != nil { t.Fatal(err) }
+	if _, err := store.db.Exec(`INSERT INTO users(username, pubkey, invite_code, role, status, created_at)
 		VALUES('alice', x'01', 'test-invite', 'member', 'active', ?)`, nowText()); err != nil { t.Fatal(err) }
 
-	board, err := service.GetBoardBySlug("general")
+	board, err := store.GetBoardBySlug("general")
 	if err != nil { t.Fatal(err) }
-	id, err := service.CreateThreadWithBody("Test topic", "Initial post", board.ID, 1)
+	id, err := store.CreateThreadWithBody("Test topic", "Initial post", board.ID, 1)
 	if err != nil { t.Fatal(err) }
-	if err := service.CreateComment(id, 1, "A reply"); err != nil { t.Fatal(err) }
+	if err := store.CreateComment(id, 1, "A reply"); err != nil { t.Fatal(err) }
 
-	topics, total, err := service.ListThreadsPage(board.ID, 1, 20)
+	topics, total, err := store.ListThreadsPage(board.ID, 1, 20)
 	if err != nil { t.Fatal(err) }
 	if total != 1 || len(topics) != 1 || topics[0].ReplyCount != 1 { t.Fatalf("unexpected topic listing: total=%d topics=%+v", total, topics) }
 
-	if err := service.SetThreadStatus(id, 1, service.ThreadLocked, "test lock"); err != nil { t.Fatal(err) }
-	if err := service.CreateComment(id, 1, "A reply after locking"); !errors.Is(err, service.ErrThreadLocked) { t.Fatalf("expected locked topic error, got %v", err) }
+	if err := store.SetThreadStatus(id, 1, service.ThreadLocked, "test lock"); err != nil { t.Fatal(err) }
+	if err := store.CreateComment(id, 1, "A reply after locking"); !errors.Is(err, service.ErrThreadLocked) { t.Fatalf("expected locked topic error, got %v", err) }
 
-	if err := service.DeleteThread(id, 1, false, ""); err != nil { t.Fatal(err) }
-	if err := service.SetThreadStatus(id, 1, service.ThreadOpen, "restore"); err != nil { t.Fatal(err) }
-	if _, err := service.GetThreadByID(id); err != nil { t.Fatalf("restored topic should be readable: %v", err) }
+	if err := store.DeleteThread(id, 1, false, ""); err != nil { t.Fatal(err) }
+	if err := store.SetThreadStatus(id, 1, service.ThreadOpen, "restore"); err != nil { t.Fatal(err) }
+	if _, err := store.GetThreadByID(id); err != nil { t.Fatalf("restored topic should be readable: %v", err) }
 }
