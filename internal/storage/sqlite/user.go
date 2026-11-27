@@ -17,7 +17,7 @@ var (
 	validUsername     = regexp.MustCompile("^[A-Za-z0-9_-]+$")
 )
 
-func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) error {
+func (s *Store) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) error {
 	if err := isValidUsername(username); err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode s
 	return tx.Commit()
 }
 
-func (s *Service) BootstrapAdmin(username string, pubKey ssh.PublicKey) error {
+func (s *Store) BootstrapAdmin(username string, pubKey ssh.PublicKey) error {
 	if err := isValidUsername(username); err != nil {
 		return err
 	}
@@ -101,11 +101,11 @@ func (s *Service) BootstrapAdmin(username string, pubKey ssh.PublicKey) error {
 	return tx.Commit()
 }
 
-func (s *Service) GetUserByID(id int) (service.User, error) {
+func (s *Store) GetUserByID(id int) (service.User, error) {
 	return scanUser(s.db.QueryRow(userSelect+" WHERE id = ?", id))
 }
 
-func (s *Service) GetUserByUsername(username string) (service.User, error) {
+func (s *Store) GetUserByUsername(username string) (service.User, error) {
 	return scanUser(s.db.QueryRow(userSelect+" WHERE username = ? COLLATE NOCASE", username))
 }
 
@@ -128,7 +128,7 @@ func scanUser(row *sql.Row) (service.User, error) {
 	return u, nil
 }
 
-func (s *Service) AuthenticateUser(username string, givenKey ssh.PublicKey) bool {
+func (s *Store) AuthenticateUser(username string, givenKey ssh.PublicKey) bool {
 	if givenKey == nil {
 		return false
 	}
@@ -146,7 +146,7 @@ func (s *Service) AuthenticateUser(username string, givenKey ssh.PublicKey) bool
 	return true
 }
 
-func (s *Service) ListUsers() ([]service.User, error) {
+func (s *Store) ListUsers() ([]service.User, error) {
 	rows, err := s.db.Query(userSelect + " ORDER BY username COLLATE NOCASE")
 	if err != nil {
 		return nil, err
@@ -172,7 +172,7 @@ func (s *Service) ListUsers() ([]service.User, error) {
 	return users, rows.Err()
 }
 
-func (s *Service) SetUserRole(username, role string) error {
+func (s *Store) SetUserRole(username, role string) error {
 	if role != service.RoleMember && role != service.RoleModerator && role != service.RoleAdmin {
 		return errors.New("role must be member, moderator, or admin")
 	}
@@ -202,7 +202,7 @@ func (s *Service) SetUserRole(username, role string) error {
 	return tx.Commit()
 }
 
-func (s *Service) SetUserStatus(username, status string) error {
+func (s *Store) SetUserStatus(username, status string) error {
 	if status != service.StatusActive && status != service.StatusSuspended {
 		return errors.New("status must be active or suspended")
 	}

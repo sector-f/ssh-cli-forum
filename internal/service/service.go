@@ -83,8 +83,12 @@ type BoardService interface {
 
 // ChatService provides persistent channel history and independent live-event
 // subscriptions. Consumers may subscribe independently of their current view.
-type ChatService interface {
+type ChatStore interface {
 	RecentMessages(channelSlug string, limit int) ([]ChatMessage, error)
 	PostMessage(channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error)
+}
+
+type ChatService interface {
+	ChatStore
 	Subscribe(ctx context.Context, channelSlug string) (<-chan ChatMessage, func())
 }

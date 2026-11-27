@@ -9,12 +9,12 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Service) CreateThread(title string, boardID, authorID int) error {
+func (s *Store) CreateThread(title string, boardID, authorID int) error {
 	_, err := s.CreateThreadWithBody(title, "", boardID, authorID)
 	return err
 }
 
-func (s *Service) CreateThreadWithBody(title, body string, boardID, authorID int) (int, error) {
+func (s *Store) CreateThreadWithBody(title, body string, boardID, authorID int) (int, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return 0, errors.New("topic title cannot be empty")
@@ -56,7 +56,7 @@ func scanThreadListing(row interface{ Scan(...interface{}) error }) (service.Thr
 	return t, nil
 }
 
-func (s *Service) GetThreadByID(id int) (service.Thread, error) {
+func (s *Store) GetThreadByID(id int) (service.Thread, error) {
 	row := s.db.QueryRow(threadSelect+` WHERE t.id = ? AND t.deleted_at IS NULL`, id)
 	listing, err := scanThreadListing(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -73,7 +73,7 @@ func (s *Service) GetThreadByID(id int) (service.Thread, error) {
 	}, nil
 }
 
-func (s *Service) ListThreads(boardID int) ([]service.ThreadListing, error) {
+func (s *Store) ListThreads(boardID int) ([]service.ThreadListing, error) {
 	var all []service.ThreadListing
 	for page := 1; ; page++ {
 		threads, total, err := s.ListThreadsPage(boardID, page, 100)
@@ -87,7 +87,7 @@ func (s *Service) ListThreads(boardID int) ([]service.ThreadListing, error) {
 	}
 }
 
-func (s *Service) ListThreadsPage(boardID, page, pageSize int) ([]service.ThreadListing, int, error) {
+func (s *Store) ListThreadsPage(boardID, page, pageSize int) ([]service.ThreadListing, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -121,7 +121,7 @@ func (s *Service) ListThreadsPage(boardID, page, pageSize int) ([]service.Thread
 	return threads, total, rows.Err()
 }
 
-func (s *Service) RecentThreads(limit int) ([]service.ThreadListing, error) {
+func (s *Store) RecentThreads(limit int) ([]service.ThreadListing, error) {
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
@@ -142,7 +142,7 @@ func (s *Service) RecentThreads(limit int) ([]service.ThreadListing, error) {
 	return threads, rows.Err()
 }
 
-func (s *Service) UpdateThread(id, actorID int, title, body string, _ bool) error {
+func (s *Store) UpdateThread(id, actorID int, title, body string, _ bool) error {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return errors.New("topic title cannot be empty")
@@ -151,7 +151,7 @@ func (s *Service) UpdateThread(id, actorID int, title, body string, _ bool) erro
 	return err
 }
 
-func (s *Service) DeleteThread(id, actorID int, moderator bool, reason string) error {
+func (s *Store) DeleteThread(id, actorID int, moderator bool, reason string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -168,7 +168,7 @@ func (s *Service) DeleteThread(id, actorID int, moderator bool, reason string) e
 	return tx.Commit()
 }
 
-func (s *Service) SetThreadPinned(id, actorID int, pinned bool, reason string) error {
+func (s *Store) SetThreadPinned(id, actorID int, pinned bool, reason string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -195,7 +195,7 @@ func (s *Service) SetThreadPinned(id, actorID int, pinned bool, reason string) e
 	return tx.Commit()
 }
 
-func (s *Service) SetThreadStatus(id, actorID int, status, reason string) error {
+func (s *Store) SetThreadStatus(id, actorID int, status, reason string) error {
 	if status != service.ThreadOpen && status != service.ThreadLocked && status != service.ThreadHidden {
 		return fmt.Errorf("invalid topic status %q", status)
 	}

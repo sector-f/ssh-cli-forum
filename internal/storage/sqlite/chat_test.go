@@ -10,10 +10,9 @@ import (
 	"time"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
-	"go.uber.org/zap"
 )
 
-func createChatTestUser(t *testing.T, store *Service) int {
+func createChatTestUser(t *testing.T, store *Store) int {
 	t.Helper()
 	if _, err := store.db.Exec("INSERT INTO invites(code, created_at, expires_at) VALUES('chat-invite', ?, ?)",
 		nowText(), "9999-12-31T23:59:59Z"); err != nil {
@@ -32,13 +31,16 @@ func createChatTestUser(t *testing.T, store *Service) int {
 
 func TestChatMessagesPersistAndPublish(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "chat.db")
-	store, err := Open(zap.NewNop(), dbPath)
+	store, err := Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer store.Close()
 	userID := createChatTestUser(t, store)
+	chat := service.NewChatService(store)
+	session := service.NewSession(userID, store, store, chat)
 
-	events, cancel := store.Subscribe(context.Background(), service.GlobalChatChannel)
+	events, cancel := chat.Subscribe(context.Background(), service.GlobalChatChannel)
 	defer cancel()
 
 	for i := 0; i < 105; i++ {
@@ -48,7 +50,7 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 			kind = service.ChatMessageAction
 			body = "waves"
 		}
-		if _, err := store.PostMessage(service.GlobalChatChannel, userID, kind, body); err != nil {
+		if _, err := session.PostMessage(service.GlobalChatChannel, userID, kind, body); err != nil {
 			t.Fatalf("post message %d: %v", i, err)
 		}
 	}
@@ -79,7 +81,7 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store, err = Open(zap.NewNop(), dbPath)
+	store, err = Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,36 +96,37 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 }
 
 func TestChatRejectsInvalidMessagesAndUnknownChannels(t *testing.T) {
-	store, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "chat.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "chat.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 	userID := createChatTestUser(t, store)
+	session := service.NewSession(userID, store, store, service.NewChatService(store))
 
-	if _, err := store.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, "   "); !errors.Is(err, service.ErrChatMessageEmpty) {
+	if _, err := session.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, "   "); !errors.Is(err, service.ErrChatMessageEmpty) {
 		t.Fatalf("empty message error = %v", err)
 	}
-	if _, err := store.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, "line one\nline two"); !errors.Is(err, service.ErrChatMessageInvalid) {
+	if _, err := session.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, "line one\nline two"); !errors.Is(err, service.ErrChatMessageInvalid) {
 		t.Fatalf("multiline message error = %v", err)
 	}
-	if _, err := store.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, strings.Repeat("x", service.ChatMessageMaxLength+1)); !errors.Is(err, service.ErrChatMessageTooLong) {
+	if _, err := session.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, strings.Repeat("x", service.ChatMessageMaxLength+1)); !errors.Is(err, service.ErrChatMessageTooLong) {
 		t.Fatalf("overlong message error = %v", err)
 	}
-	if _, err := store.PostMessage("missing-channel", userID, service.ChatMessageText, "hello"); !errors.Is(err, service.ErrChatChannelNotFound) {
+	if _, err := session.PostMessage("missing-channel", userID, service.ChatMessageText, "hello"); !errors.Is(err, service.ErrChatChannelNotFound) {
 		t.Fatalf("unknown channel error = %v", err)
 	}
 }
 
 func TestChatSubscriptionIsContextBound(t *testing.T) {
-	store, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "chat.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "chat.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 
 	ctx, cancelContext := context.WithCancel(context.Background())
-	events, _ := store.Subscribe(ctx, service.GlobalChatChannel)
+	events, _ := service.NewChatService(store).Subscribe(ctx, service.GlobalChatChannel)
 	cancelContext()
 	select {
 	case _, ok := <-events:

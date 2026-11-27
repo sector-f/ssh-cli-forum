@@ -9,7 +9,7 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Service) CreateComment(threadID, authorID int, body string) error {
+func (s *Store) CreateComment(threadID, authorID int, body string) error {
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return errors.New("reply cannot be empty")
@@ -29,7 +29,7 @@ func (s *Service) CreateComment(threadID, authorID int, body string) error {
 	return tx.Commit()
 }
 
-func (s *Service) ListComments(threadID int) ([]service.Comment, error) {
+func (s *Store) ListComments(threadID int) ([]service.Comment, error) {
 	var all []service.Comment
 	for page := 1; ; page++ {
 		comments, total, err := s.ListCommentsPage(threadID, page, 100)
@@ -43,7 +43,7 @@ func (s *Service) ListComments(threadID int) ([]service.Comment, error) {
 	}
 }
 
-func (s *Service) ListCommentsPage(threadID, page, pageSize int) ([]service.Comment, int, error) {
+func (s *Store) ListCommentsPage(threadID, page, pageSize int) ([]service.Comment, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -83,7 +83,7 @@ func (s *Service) ListCommentsPage(threadID, page, pageSize int) ([]service.Comm
 	return comments, total, rows.Err()
 }
 
-func (s *Service) UpdateComment(id, actorID int, body string, _ bool) error {
+func (s *Store) UpdateComment(id, actorID int, body string, _ bool) error {
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return errors.New("reply cannot be empty")
@@ -92,7 +92,7 @@ func (s *Service) UpdateComment(id, actorID int, body string, _ bool) error {
 	return err
 }
 
-func (s *Service) DeleteComment(id, actorID int, moderator bool, reason string) error {
+func (s *Store) DeleteComment(id, actorID int, moderator bool, reason string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -120,7 +120,7 @@ func (s *Service) DeleteComment(id, actorID int, moderator bool, reason string) 
 	return tx.Commit()
 }
 
-func (s *Service) GetCommentByID(id int) (service.Comment, error) {
+func (s *Store) GetCommentByID(id int) (service.Comment, error) {
 	var c service.Comment
 	var authorID int
 	var posted, updated, created, last sql.NullString
@@ -145,7 +145,7 @@ func (s *Service) GetCommentByID(id int) (service.Comment, error) {
 	return c, nil
 }
 
-func (s *Service) ListModerationLog(limit int) ([]service.ModerationEntry, error) {
+func (s *Store) ListModerationLog(limit int) ([]service.ModerationEntry, error) {
 	if limit < 1 || limit > 500 {
 		limit = 100
 	}

@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"database/sql"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
@@ -10,7 +9,7 @@ import (
 const maxChatHistoryLimit = 1000
 
 // RecentMessages reads durable history and returns messages in chronological order.
-func (s *Service) RecentMessages(channelSlug string, limit int) ([]service.ChatMessage, error) {
+func (s *Store) RecentMessages(channelSlug string, limit int) ([]service.ChatMessage, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -48,9 +47,8 @@ func (s *Service) RecentMessages(channelSlug string, limit int) ([]service.ChatM
 	return messages, nil
 }
 
-// PostMessage persists a message before publishing it to live subscribers.
-// SQLite remains the source of truth; the in-memory hub is only an event path.
-func (s *Service) PostMessage(channelSlug string, userID int, kind service.ChatMessageKind, body string) (service.ChatMessage, error) {
+// PostMessage persists a message and returns the stored representation.
+func (s *Store) PostMessage(channelSlug string, userID int, kind service.ChatMessageKind, body string) (service.ChatMessage, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return service.ChatMessage{}, err
@@ -92,12 +90,6 @@ func (s *Service) PostMessage(channelSlug string, userID int, kind service.ChatM
 	if err := tx.Commit(); err != nil {
 		return service.ChatMessage{}, err
 	}
-	s.chatHub.Publish(message)
 	return message, nil
 }
 
-// Subscribe registers a channel listener. The SSH session context ensures that
-// subscribers are released automatically when their connection ends.
-func (s *Service) Subscribe(ctx context.Context, channelSlug string) (<-chan service.ChatMessage, func()) {
-	return s.chatHub.Subscribe(ctx, channelSlug)
-}

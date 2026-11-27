@@ -4,29 +4,26 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/sector-f/ssh-cli-forum/internal/service"
-	"go.uber.org/zap"
 )
 
-type Service struct {
-	logger  *zap.Logger
-	db      *sql.DB
-	mu      sync.Mutex
-	chatHub *service.ChatHub
+type Store struct {
+	db *sql.DB
 }
 
-func Open(logger *zap.Logger, path string) (*Service, error) {
+// Service is retained as a source-compatible alias for previous callers.
+type Service = Store
+
+func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite3", path+"?_foreign_keys=on&_busy_timeout=5000")
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	s := &Service{logger: logger, db: db, chatHub: service.NewChatHub()}
+	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -34,9 +31,9 @@ func Open(logger *zap.Logger, path string) (*Service, error) {
 	return s, nil
 }
 
-func (s *Service) Close() error { return s.db.Close() }
+func (s *Store) Close() error { return s.db.Close() }
 
-func (s *Service) migrate() error {
+func (s *Store) migrate() error {
 	if _, err := s.db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		return err
 	}
@@ -309,7 +306,7 @@ func hasColumn(tx *sql.Tx, table, column string) (bool, error) {
 	return false, rows.Err()
 }
 
-func (s *Service) MigrationVersions() ([]int, error) {
+func (s *Store) MigrationVersions() ([]int, error) {
 	rows, err := s.db.Query("SELECT version FROM schema_migrations ORDER BY version")
 	if err != nil {
 		return nil, err
@@ -326,7 +323,7 @@ func (s *Service) MigrationVersions() ([]int, error) {
 	return versions, rows.Err()
 }
 
-func (s *Service) Backup(destination string) error {
+func (s *Store) Backup(destination string) error {
 	if strings.TrimSpace(destination) == "" {
 		return fmt.Errorf("backup destination is required")
 	}

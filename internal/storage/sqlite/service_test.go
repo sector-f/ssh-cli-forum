@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
-	"go.uber.org/zap"
 )
 
 func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
@@ -49,7 +48,7 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	store, err := Open(zap.NewNop(), dbPath)
+	store, err := Open(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +78,7 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 }
 
 func TestForumWriteOperations(t *testing.T) {
-	store, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "service.db"))
+	store, err := Open(filepath.Join(t.TempDir(), "service.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

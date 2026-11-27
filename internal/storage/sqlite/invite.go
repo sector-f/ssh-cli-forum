@@ -10,7 +10,7 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Service) CreateInvite(code string, expiresAt time.Time, isAdmin bool) error {
+func (s *Store) CreateInvite(code string, expiresAt time.Time, isAdmin bool) error {
 	if code == "" {
 		return errors.New("invite code cannot be empty")
 	}
@@ -18,7 +18,7 @@ func (s *Service) CreateInvite(code string, expiresAt time.Time, isAdmin bool) e
 	return err
 }
 
-func (s *Service) ListInvites() ([]service.Invite, error) {
+func (s *Store) ListInvites() ([]service.Invite, error) {
 	rows, err := s.db.Query(`SELECT i.code, i.created_at, i.expires_at, i.is_admin, COALESCE(u.username, ''),
 		COALESCE(u.created_at, ''), COALESCE(i.revoked_at, '')
 		FROM invites i LEFT JOIN users u ON u.invite_code = i.code ORDER BY i.created_at DESC`)
@@ -40,7 +40,7 @@ func (s *Service) ListInvites() ([]service.Invite, error) {
 	return invites, rows.Err()
 }
 
-func (s *Service) GetInvite(code string) (service.Invite, error) {
+func (s *Store) GetInvite(code string) (service.Invite, error) {
 	var i service.Invite
 	var created, expires, revoked sql.NullString
 	err := s.db.QueryRow("SELECT code, created_at, expires_at, is_admin, revoked_at FROM invites WHERE code = ?", code).
@@ -58,7 +58,7 @@ func (s *Service) GetInvite(code string) (service.Invite, error) {
 	return i, nil
 }
 
-func (s *Service) RevokeInvite(code string) error {
+func (s *Store) RevokeInvite(code string) error {
 	res, err := s.db.Exec("UPDATE invites SET revoked_at = ? WHERE code = ? AND revoked_at IS NULL", nowText(), code)
 	if err != nil {
 		return err

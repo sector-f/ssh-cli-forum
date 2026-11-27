@@ -30,7 +30,7 @@ func Run() error {
 	}
 	defer logger.Sync()
 
-	store, err := sqlite.Open(logger, defaultDBPath)
+	store, err := sqlite.Open(defaultDBPath)
 	if err != nil {
 		return fmt.Errorf("open SQLite storage: %w", err)
 	}
@@ -40,11 +40,13 @@ func Run() error {
 		}
 	}()
 
+	chat := service.NewChatService(store)
+
 	server, err := wish.NewServer(
 		wish.WithAddress(defaultAddress),
 		wish.WithPublicKeyAuth(authHandler(logger, store)),
 		wish.WithMiddleware(
-			bubbletea.MiddlewareWithProgramHandler(tui.Handler(store, store, store), termenv.Ascii),
+			bubbletea.MiddlewareWithProgramHandler(tui.Handler(store, store, chat), termenv.Ascii),
 			signupMiddleware(logger, store),
 			loggingMiddleware(logger),
 			activeterm.Middleware(),

@@ -9,7 +9,7 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Service) CreateBoard(name string) error {
+func (s *Store) CreateBoard(name string) error {
 	slug := slugify(name)
 	if slug == "" {
 		return errors.New("board name must contain letters or numbers")
@@ -17,7 +17,7 @@ func (s *Service) CreateBoard(name string) error {
 	return s.CreateBoardWithDetails(slug, name, "", 0, 0)
 }
 
-func (s *Service) CreateBoardWithDetails(slug, name, description string, sortOrder, createdBy int) error {
+func (s *Store) CreateBoardWithDetails(slug, name, description string, sortOrder, createdBy int) error {
 	slug = slugify(slug)
 	if slug == "" {
 		return errors.New("invalid board slug")
@@ -30,7 +30,7 @@ func (s *Service) CreateBoardWithDetails(slug, name, description string, sortOrd
 	return err
 }
 
-func (s *Service) ListBoards() ([]service.BoardListing, error) {
+func (s *Store) ListBoards() ([]service.BoardListing, error) {
 	rows, err := s.db.Query("SELECT id, slug, name, description, sort_order, status FROM boards ORDER BY sort_order, name COLLATE NOCASE")
 	if err != nil {
 		return nil, err
@@ -47,15 +47,15 @@ func (s *Service) ListBoards() ([]service.BoardListing, error) {
 	return boards, rows.Err()
 }
 
-func (s *Service) GetBoardByID(id int) (service.Board, error) {
+func (s *Store) GetBoardByID(id int) (service.Board, error) {
 	return s.getBoard("id", id)
 }
 
-func (s *Service) GetBoardBySlug(slug string) (service.Board, error) {
+func (s *Store) GetBoardBySlug(slug string) (service.Board, error) {
 	return s.getBoard("slug", slug)
 }
 
-func (s *Service) getBoard(column string, value interface{}) (service.Board, error) {
+func (s *Store) getBoard(column string, value interface{}) (service.Board, error) {
 	if column != "id" && column != "slug" {
 		return service.Board{}, errors.New("invalid board lookup")
 	}
@@ -71,7 +71,7 @@ func (s *Service) getBoard(column string, value interface{}) (service.Board, err
 	return b, nil
 }
 
-func (s *Service) UpdateBoard(slug, name, description string) error {
+func (s *Store) UpdateBoard(slug, name, description string) error {
 	if strings.TrimSpace(name) == "" {
 		return errors.New("board name cannot be empty")
 	}
@@ -86,7 +86,7 @@ func (s *Service) UpdateBoard(slug, name, description string) error {
 	return err
 }
 
-func (s *Service) SetBoardStatus(slug, status string) error {
+func (s *Store) SetBoardStatus(slug, status string) error {
 	if status != service.BoardActive && status != service.BoardReadOnly && status != service.BoardArchived {
 		return errors.New("board status must be active, read_only, or archived")
 	}
