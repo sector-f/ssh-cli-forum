@@ -72,7 +72,7 @@ func (m *sessionModel) createAdminInvite(args []string) {
 	}
 	code, err := newInviteCode()
 	if err == nil {
-		err = m.users.CreateInvite(m.ctx, code, time.Now().Add(duration), false)
+		err = m.users.CreateInvite(m.ctx, code, time.Now().Add(duration))
 	}
 	if err != nil {
 		m.fail(err)
