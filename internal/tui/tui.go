@@ -496,7 +496,7 @@ func (m *sessionModel) help(args []string) {
 	if len(args) == 0 {
 		for _, group := range commandGroupOrder {
 			var entries []string
-			for _, cmd := range commandRegistry {
+			for _, cmd := range commandRegistry() {
 				if cmd.Group != group || !m.hasPermission(cmd.Permission) {
 					continue
 				}
