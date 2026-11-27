@@ -449,7 +449,7 @@ func (m *sessionModel) currentPrompt() string {
 	switch m.compose {
 	case composeNewTitle:
 		return "Topic title: "
-	case composeNewBody, composeReplyBody, composeEditBody, composeEditReplyBody:
+	case composeNewBody, composeReplyBody:
 		return "| "
 	default:
 		return m.prompt()
