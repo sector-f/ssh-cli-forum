@@ -19,7 +19,7 @@ func createChatTestUser(t *testing.T, store *Service) int {
 		nowText(), "9999-12-31T23:59:59Z"); err != nil {
 		t.Fatal(err)
 	}
-	result, err := service.db.Exec("INSERT INTO users(username, pubkey, invite_code, status, created_at) VALUES('alice', x'01', 'chat-invite', 'active', ?)", nowText())
+	result, err := store.db.Exec("INSERT INTO users(username, pubkey, invite_code, status, created_at) VALUES('alice', x'01', 'chat-invite', 'active', ?)", nowText())
 	if err != nil {
 		t.Fatal(err)
 	}
