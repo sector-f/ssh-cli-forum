@@ -78,7 +78,7 @@ func (s *Store) PostMessage(ctx context.Context, channelSlug string, userID int,
 
 	var message service.ChatMessage
 	var storedAt string
-	err = tx.QueryRowContext(ctx, "SELECT m.id, c.slug, u.id, u.username, m.kind, m.body, m.created_at "+
+	err = tx.QueryRowContext(ctx, "SELECT m.id, c.slug, u.id, u.username, m.body, m.created_at "+
 		"FROM chat_messages m JOIN chat_channels c ON c.id = m.channel_id "+
 		"JOIN users u ON u.id = m.user_id WHERE m.id = ?", messageID).Scan(
 		&message.ID, &message.ChannelSlug, &message.UserID,
