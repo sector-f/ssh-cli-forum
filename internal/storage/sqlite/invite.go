@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
@@ -50,8 +51,13 @@ func (s *Store) GetInvite(code string) (service.Invite, error) {
 	}
 	i.CreatedAt, i.ExpiresAt, i.RevokedAt = parseTime(created.String), parseTime(expires.String), parseTime(revoked.String)
 	var redeemed sql.NullString
-	_ = s.db.QueryRow("SELECT username, created_at FROM users WHERE invite_code = ?", code).Scan(&i.RedeemedBy, &redeemed)
-	i.RedeemedAt = parseTime(redeemed.String)
+	err = s.db.QueryRow("SELECT username, created_at FROM users WHERE invite_code = ?", code).Scan(&i.RedeemedBy, &redeemed)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return service.Invite{}, fmt.Errorf("load invitation redemption: %w", err)
+	}
+	if err == nil {
+		i.RedeemedAt = parseTime(redeemed.String)
+	}
 	return i, nil
 }
 

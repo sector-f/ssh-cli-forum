@@ -888,7 +888,7 @@ func (m *sessionModel) showProfile(args []string) {
 	}
 	u, err := m.users.GetUserByUsername(username)
 	if err != nil {
-		m.fail(service.ErrUserNotFound)
+		m.fail(err)
 		return
 	}
 	name := u.DisplayName

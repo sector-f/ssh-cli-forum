@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 
+	sqlite3 "github.com/mattn/go-sqlite3"
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
@@ -17,8 +17,20 @@ func (s *Store) CreateUser(username string, pubKey []byte, inviteCode, role stri
 	_, err := s.db.Exec(`INSERT INTO users (username, pubkey, invite_code, is_admin, role, status, created_at)
 		VALUES (?, ?, ?, ?, ?, 'active', ?)`,
 		username, pubKey, inviteCode, role == service.RoleAdmin, role, nowText())
-	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unique") {
-		return service.ErrUserExists
+	if err != nil && isUniqueConstraint(err) {
+		var exists int
+		if lookupErr := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE username = ? COLLATE NOCASE)", username).Scan(&exists); lookupErr != nil {
+			return fmt.Errorf("check conflicting username: %w", lookupErr)
+		}
+		if exists != 0 {
+			return service.ErrUserExists
+		}
+		if lookupErr := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE invite_code = ?)", inviteCode).Scan(&exists); lookupErr != nil {
+			return fmt.Errorf("check redeemed invitation: %w", lookupErr)
+		}
+		if exists != 0 {
+			return service.ErrInviteUsed
+		}
 	}
 	return err
 }
@@ -41,8 +53,14 @@ func (s *Store) BootstrapAdmin(username string, pubKey []byte) error {
 	}
 	if _, err := tx.Exec(`INSERT INTO users (username, pubkey, invite_code, is_admin, role, status, created_at)
 		VALUES (?, ?, ?, 1, 'admin', 'active', ?)`, username, pubKey, code, nowText()); err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "unique") {
-			return service.ErrUserExists
+		if isUniqueConstraint(err) {
+			var exists int
+			if lookupErr := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE username = ? COLLATE NOCASE)", username).Scan(&exists); lookupErr != nil {
+				return fmt.Errorf("check conflicting username: %w", lookupErr)
+			}
+			if exists != 0 {
+				return service.ErrUserExists
+			}
 		}
 		return err
 	}
@@ -63,6 +81,9 @@ func scanUser(row *sql.Row) (service.User, error) {
 	var u service.User
 	var created, last sql.NullString
 	if err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Status, &u.IsAdmin, &created, &last); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return service.User{}, service.ErrUserNotFound
+		}
 		return service.User{}, err
 	}
 	u.CreatedAt, u.LastSeenAt = parseTime(created.String), parseTime(last.String)
@@ -148,3 +169,8 @@ func (s *Store) SetUserStatus(username, status string) error {
 	return err
 }
 
+
+func isUniqueConstraint(err error) bool {
+	var sqliteErr sqlite3.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique
+}
