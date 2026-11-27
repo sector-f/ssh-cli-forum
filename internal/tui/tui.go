@@ -737,7 +737,7 @@ func (m *sessionModel) startReply() {
 		m.fail(errors.New("'reply' must be run from inside a topic"))
 		return
 	}
-	t, err := m.boards.GetThreadByID(m.ctx, id)
+	_, err = m.boards.GetThreadByID(m.ctx, id)
 	if err != nil {
 		m.fail(err)
 		return
@@ -806,7 +806,7 @@ func (m *sessionModel) finishComposition() {
 
 func (m *sessionModel) resetComposition() {
 	m.compose, m.draftTitle, m.draftLines = composeNone, "", nil
-	m.draftThreadID, m.draftReplyID = 0, 0
+	m.draftThreadID = 0
 	m.input.Prompt = m.currentPrompt()
 }
 
