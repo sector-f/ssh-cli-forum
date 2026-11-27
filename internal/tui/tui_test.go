@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
 func TestSplitCommandQuotedArguments(t *testing.T) {
@@ -23,9 +23,9 @@ func TestSplitCommandRejectsUnterminatedQuote(t *testing.T) {
 }
 
 func TestFormatChatMessage(t *testing.T) {
-	message := forum.ChatMessage{
+	message := service.ChatMessage{
 		Username: "alice",
-		Kind: forum.ChatMessageText,
+		Kind: service.ChatMessageText,
 		Text: "hello\x1b[31m",
 		Timestamp: time.Date(2026, 11, 27, 12, 34, 0, 0, time.Local),
 	}
@@ -34,7 +34,7 @@ func TestFormatChatMessage(t *testing.T) {
 		t.Fatalf("chat message was not rendered safely: %q", got)
 	}
 
-	message.Kind = forum.ChatMessageAction
+	message.Kind = service.ChatMessageAction
 	message.Text = "waves"
 	got = formatChatMessage(message)
 	if !strings.Contains(got, "* alice waves") {

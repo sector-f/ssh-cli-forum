@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/service"
 	"go.uber.org/zap"
 )
 
@@ -37,7 +37,7 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 
 	board, err := service.GetBoardBySlug("general-discussion")
 	if err != nil { t.Fatal(err) }
-	if board.Name != "General Discussion" || board.Status != forum.BoardActive { t.Fatalf("unexpected migrated board: %+v", board) }
+	if board.Name != "General Discussion" || board.Status != service.BoardActive { t.Fatalf("unexpected migrated board: %+v", board) }
 	thread, err := service.GetThreadByID(1)
 	if err != nil { t.Fatal(err) }
 	if thread.Body != "Original body" || len(thread.Comments) != 1 || thread.Comments[0].Body != "Legacy reply" {
@@ -46,7 +46,7 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 }
 
 func TestForumWriteOperations(t *testing.T) {
-	service, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "forum.db"))
+	service, err := Open(zap.NewNop(), filepath.Join(t.TempDir(), "service.db"))
 	if err != nil { t.Fatal(err) }
 	defer service.Close()
 
@@ -65,10 +65,10 @@ func TestForumWriteOperations(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if total != 1 || len(topics) != 1 || topics[0].ReplyCount != 1 { t.Fatalf("unexpected topic listing: total=%d topics=%+v", total, topics) }
 
-	if err := service.SetThreadStatus(id, 1, forum.ThreadLocked, "test lock"); err != nil { t.Fatal(err) }
-	if err := service.CreateComment(id, 1, "A reply after locking"); !errors.Is(err, forum.ErrThreadLocked) { t.Fatalf("expected locked topic error, got %v", err) }
+	if err := service.SetThreadStatus(id, 1, service.ThreadLocked, "test lock"); err != nil { t.Fatal(err) }
+	if err := service.CreateComment(id, 1, "A reply after locking"); !errors.Is(err, service.ErrThreadLocked) { t.Fatalf("expected locked topic error, got %v", err) }
 
 	if err := service.DeleteThread(id, 1, false, ""); err != nil { t.Fatal(err) }
-	if err := service.SetThreadStatus(id, 1, forum.ThreadOpen, "restore"); err != nil { t.Fatal(err) }
+	if err := service.SetThreadStatus(id, 1, service.ThreadOpen, "restore"); err != nil { t.Fatal(err) }
 	if _, err := service.GetThreadByID(id); err != nil { t.Fatalf("restored topic should be readable: %v", err) }
 }

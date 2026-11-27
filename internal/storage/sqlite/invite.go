@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
 func (s *Service) CreateInvite(code string, expiresAt time.Time, isAdmin bool) error {
@@ -16,15 +16,15 @@ func (s *Service) CreateInvite(code string, expiresAt time.Time, isAdmin bool) e
 	return err
 }
 
-func (s *Service) ListInvites() ([]forum.Invite, error) {
+func (s *Service) ListInvites() ([]service.Invite, error) {
 	rows, err := s.db.Query(`SELECT i.code, i.created_at, i.expires_at, i.is_admin, COALESCE(u.username, ''),
 		COALESCE(u.created_at, ''), COALESCE(i.revoked_at, '')
 		FROM invites i LEFT JOIN users u ON u.invite_code = i.code ORDER BY i.created_at DESC`)
 	if err != nil { return nil, err }
 	defer rows.Close()
-	var invites []forum.Invite
+	var invites []service.Invite
 	for rows.Next() {
-		var i forum.Invite
+		var i service.Invite
 		var created, expires, redeemed, revoked string
 		if err := rows.Scan(&i.Code, &created, &expires, &i.IsAdmin, &i.RedeemedBy, &redeemed, &revoked); err != nil { return nil, err }
 		i.CreatedAt, i.ExpiresAt = parseTime(created), parseTime(expires)
@@ -34,13 +34,13 @@ func (s *Service) ListInvites() ([]forum.Invite, error) {
 	return invites, rows.Err()
 }
 
-func (s *Service) GetInvite(code string) (forum.Invite, error) {
-	var i forum.Invite
+func (s *Service) GetInvite(code string) (service.Invite, error) {
+	var i service.Invite
 	var created, expires, revoked sql.NullString
 	err := s.db.QueryRow("SELECT code, created_at, expires_at, is_admin, revoked_at FROM invites WHERE code = ?", code).
 		Scan(&i.Code, &created, &expires, &i.IsAdmin, &revoked)
-	if errors.Is(err, sql.ErrNoRows) { return forum.Invite{}, forum.ErrInviteInvalid }
-	if err != nil { return forum.Invite{}, err }
+	if errors.Is(err, sql.ErrNoRows) { return service.Invite{}, service.ErrInviteInvalid }
+	if err != nil { return service.Invite{}, err }
 	i.CreatedAt, i.ExpiresAt, i.RevokedAt = parseTime(created.String), parseTime(expires.String), parseTime(revoked.String)
 	var redeemed sql.NullString
 	_ = s.db.QueryRow("SELECT username, created_at FROM users WHERE invite_code = ?", code).Scan(&i.RedeemedBy, &redeemed)
@@ -55,7 +55,7 @@ func (s *Service) RevokeInvite(code string) error {
 	if err == nil && n == 0 {
 		var exists int
 		if e := s.db.QueryRow("SELECT COUNT(*) FROM invites WHERE code = ?", code).Scan(&exists); e != nil { return e }
-		if exists == 0 { return forum.ErrInviteInvalid }
+		if exists == 0 { return service.ErrInviteInvalid }
 	}
 	return err
 }

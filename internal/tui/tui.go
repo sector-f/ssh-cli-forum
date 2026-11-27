@@ -17,7 +17,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish/bubbletea"
-	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
 type composeState int
@@ -34,10 +34,10 @@ const (
 
 type sessionModel struct {
 	session ssh.Session
-	users   forum.UserService
-	boards  forum.BoardService
-	chat    forum.ChatService
-	user    forum.User
+	users   service.UserService
+	boards  service.BoardService
+	chat    service.ChatService
+	user    service.User
 
 	cwd    string
 	input  textinput.Model
@@ -52,8 +52,8 @@ type sessionModel struct {
 	chatActive     bool
 	chatInput      textinput.Model
 	chatViewport   viewport.Model
-	chatMessages   []forum.ChatMessage
-	chatEvents     <-chan forum.ChatMessage
+	chatMessages   []service.ChatMessage
+	chatEvents     <-chan service.ChatMessage
 	chatCancel     func()
 	chatGeneration uint64
 	chatStatus     string
@@ -63,13 +63,13 @@ type sessionModel struct {
 
 var _ tea.Model = (*sessionModel)(nil)
 
-func NewProgram(sess ssh.Session, userService forum.UserService, boardService forum.BoardService, chatServices ...forum.ChatService) (*tea.Program, error) {
+func NewProgram(sess ssh.Session, userService service.UserService, boardService service.BoardService, chatServices ...service.ChatService) (*tea.Program, error) {
 	user, err := userService.GetUserByUsername(sess.User())
 	if err != nil {
 		return nil, fmt.Errorf("load account: %w", err)
 	}
-	if user.Status == forum.StatusSuspended {
-		return nil, forum.ErrUserSuspended
+	if user.Status == service.StatusSuspended {
+		return nil, service.ErrUserSuspended
 	}
 	input := textinput.New()
 	input.Prompt = user.Username + "@community:/> "
@@ -79,12 +79,12 @@ func NewProgram(sess ssh.Session, userService forum.UserService, boardService fo
 
 	chatInput := textinput.New()
 	chatInput.Prompt = "chat> "
-	chatInput.CharLimit = forum.ChatMessageMaxLength
+	chatInput.CharLimit = service.ChatMessageMaxLength
 	chatInput.Width = 100
 	chatViewport := viewport.New(80, 20)
 	chatViewport.MouseWheelEnabled = true
 
-	var chatService forum.ChatService
+	var chatService service.ChatService
 	if len(chatServices) > 0 {
 		chatService = chatServices[0]
 	}
@@ -105,7 +105,7 @@ func NewProgram(sess ssh.Session, userService forum.UserService, boardService fo
 	return tea.NewProgram(m, tea.WithInput(sess), tea.WithOutput(sess)), nil
 }
 
-func Handler(userService forum.UserService, boardService forum.BoardService, chatServices ...forum.ChatService) bubbletea.ProgramHandler {
+func Handler(userService service.UserService, boardService service.BoardService, chatServices ...service.ChatService) bubbletea.ProgramHandler {
 	return func(sess ssh.Session) *tea.Program {
 		program, err := NewProgram(sess, userService, boardService, chatServices...)
 		if err != nil {
@@ -120,11 +120,11 @@ func (m *sessionModel) Init() tea.Cmd { return textinput.Blink }
 
 type chatEventMsg struct {
 	generation uint64
-	message    forum.ChatMessage
+	message    service.ChatMessage
 	ok         bool
 }
 
-func waitForChatMessage(generation uint64, events <-chan forum.ChatMessage) tea.Cmd {
+func waitForChatMessage(generation uint64, events <-chan service.ChatMessage) tea.Cmd {
 	return func() tea.Msg {
 		message, ok := <-events
 		return chatEventMsg{generation: generation, message: message, ok: ok}
@@ -224,7 +224,7 @@ func (m *sessionModel) updateChatKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "ctrl+c":
 		m.chatInput.Reset()
-		m.chatStatus = "Use /leave to return to the forum."
+		m.chatStatus = "Use /leave to return to the service."
 		return nil
 	}
 	var cmd tea.Cmd
@@ -275,8 +275,8 @@ func (m *sessionModel) enterChat() tea.Cmd {
 		return nil
 	}
 
-	events, cancel := m.chat.Subscribe(m.session.Context(), forum.GlobalChatChannel)
-	history, err := m.chat.RecentMessages(forum.GlobalChatChannel, 100)
+	events, cancel := m.chat.Subscribe(m.session.Context(), service.GlobalChatChannel)
+	history, err := m.chat.RecentMessages(service.GlobalChatChannel, 100)
 	if err != nil {
 		cancel()
 		m.fail(err)
@@ -318,7 +318,7 @@ func (m *sessionModel) handleChatInput(line string) tea.Cmd {
 	if line == "" {
 		return nil
 	}
-	kind := forum.ChatMessageText
+	kind := service.ChatMessageText
 	body := line
 	if strings.HasPrefix(line, "/") {
 		args, err := splitCommand(strings.TrimSpace(strings.TrimPrefix(line, "/")))
@@ -341,7 +341,7 @@ func (m *sessionModel) handleChatInput(line string) tea.Cmd {
 				m.chatStatus = "Usage: /me <action>"
 				return nil
 			}
-			kind = forum.ChatMessageAction
+			kind = service.ChatMessageAction
 			body = strings.Join(args[1:], " ")
 		default:
 			m.chatStatus = "Unknown chat command: /" + args[0]
@@ -349,7 +349,7 @@ func (m *sessionModel) handleChatInput(line string) tea.Cmd {
 		}
 	}
 
-	if _, err := m.chat.PostMessage(forum.GlobalChatChannel, m.user.ID, kind, body); err != nil {
+	if _, err := m.chat.PostMessage(service.GlobalChatChannel, m.user.ID, kind, body); err != nil {
 		m.chatStatus = "Error: " + err.Error()
 	} else {
 		m.chatStatus = ""
@@ -357,7 +357,7 @@ func (m *sessionModel) handleChatInput(line string) tea.Cmd {
 	return nil
 }
 
-func (m *sessionModel) appendChatMessage(message forum.ChatMessage) {
+func (m *sessionModel) appendChatMessage(message service.ChatMessage) {
 	for _, existing := range m.chatMessages {
 		if existing.ID == message.ID {
 			return
@@ -367,7 +367,7 @@ func (m *sessionModel) appendChatMessage(message forum.ChatMessage) {
 	m.chatMessages = append(m.chatMessages, message)
 	sort.Slice(m.chatMessages, func(i, j int) bool { return m.chatMessages[i].ID < m.chatMessages[j].ID })
 	if len(m.chatMessages) > 500 {
-		m.chatMessages = append([]forum.ChatMessage(nil), m.chatMessages[len(m.chatMessages)-500:]...)
+		m.chatMessages = append([]service.ChatMessage(nil), m.chatMessages[len(m.chatMessages)-500:]...)
 	}
 	m.refreshChatViewport(wasAtBottom)
 }
@@ -383,11 +383,11 @@ func (m *sessionModel) refreshChatViewport(goToBottom bool) {
 	}
 }
 
-func formatChatMessage(message forum.ChatMessage) string {
+func formatChatMessage(message service.ChatMessage) string {
 	username := cleanTerminalText(message.Username)
 	body := cleanTerminalText(message.Text)
 	timestamp := message.Timestamp.Local().Format("15:04")
-	if message.Kind == forum.ChatMessageAction {
+	if message.Kind == service.ChatMessageAction {
 		return "[" + timestamp + "] * " + username + " " + body
 	}
 	return "[" + timestamp + "] " + username + ": " + body
@@ -569,7 +569,7 @@ func (m *sessionModel) listLocation(args []string) {
 		if len(parts) == 1 && parts[0] != "" {
 			m.printBoardTopics(parts[0], 1)
 		} else if len(parts) == 2 {
-			id, err := strconv.Atoi(parts[1]); if err != nil { m.fail(forum.ErrThreadNotFound); return }
+			id, err := strconv.Atoi(parts[1]); if err != nil { m.fail(service.ErrThreadNotFound); return }
 			m.displayThread(id, 1)
 		} else { m.addOutput("No such location: " + location) }
 	default:
@@ -577,7 +577,7 @@ func (m *sessionModel) listLocation(args []string) {
 	}
 }
 
-func (m *sessionModel) printBoards(boards []forum.BoardListing) {
+func (m *sessionModel) printBoards(boards []service.BoardListing) {
 	if len(boards) == 0 { m.addOutput("No boards have been created."); return }
 	m.addOutput("SLUG                 BOARD                         STATUS")
 	for _, b := range boards {
@@ -610,7 +610,7 @@ func (m *sessionModel) listTopics(args []string) {
 	m.printThreadList(threads, page, total)
 }
 
-func (m *sessionModel) printThreadList(threads []forum.ThreadListing, page, total int) {
+func (m *sessionModel) printThreadList(threads []service.ThreadListing, page, total int) {
 	if len(threads) == 0 { m.addOutput("No topics found."); return }
 	m.addOutput("ID    TOPIC                                            REPLIES  LAST ACTIVITY")
 	for _, t := range threads {
@@ -658,11 +658,11 @@ func (m *sessionModel) showCurrent(args []string) {
 func (m *sessionModel) displayThread(id, page int) {
 	t, err := m.boards.GetThreadByID(id)
 	if err != nil { m.fail(err); return }
-	if t.Status == forum.ThreadHidden && !m.isModerator() { m.addOutput("Topic not found."); return }
+	if t.Status == service.ThreadHidden && !m.isModerator() { m.addOutput("Topic not found."); return }
 	m.addOutput(fmt.Sprintf("[%d] %s", t.ID, t.Title))
 	m.addOutput(fmt.Sprintf("Started by %s · %s · %d replies", t.Author.Username, t.CreatedAt.Format("2006-01-02 15:04"), len(t.Comments)))
 	if t.IsPinned { m.addOutput("PINNED") }
-	if t.Status == forum.ThreadLocked { m.addOutput("LOCKED") }
+	if t.Status == service.ThreadLocked { m.addOutput("LOCKED") }
 	m.addOutput(strings.Repeat("-", 72))
 	m.addOutput(t.Author.Username + ":")
 	m.addOutput(t.Body)
@@ -730,7 +730,7 @@ func (m *sessionModel) showProfile(args []string) {
 	if len(args) > 1 { m.addOutput("Usage: profile [username]"); return }
 	if len(args) == 1 { username = args[0] }
 	u, err := m.users.GetUserByUsername(username)
-	if err != nil { m.fail(forum.ErrUserNotFound); return }
+	if err != nil { m.fail(service.ErrUserNotFound); return }
 	name := u.DisplayName
 	if name == "" { name = u.Username }
 	m.addOutput(fmt.Sprintf("%s (@%s)", name, u.Username))
@@ -746,7 +746,7 @@ func (m *sessionModel) startNewTopic() {
 	}
 	board, err := m.boards.GetBoardBySlug(strings.TrimPrefix(m.cwd, "/boards/"))
 	if err != nil { m.fail(err); return }
-	if board.Status != forum.BoardActive { m.fail(forum.ErrReadOnly); return }
+	if board.Status != service.BoardActive { m.fail(service.ErrReadOnly); return }
 	m.compose = composeNewTitle
 	m.draftLines = nil
 	m.input.Prompt = m.currentPrompt()
@@ -758,7 +758,7 @@ func (m *sessionModel) startReply() {
 	if err != nil { m.fail(errors.New("'reply' must be run from inside a topic")); return }
 	t, err := m.boards.GetThreadByID(id)
 	if err != nil { m.fail(err); return }
-	if t.Status == forum.ThreadLocked { m.fail(forum.ErrThreadLocked); return }
+	if t.Status == service.ThreadLocked { m.fail(service.ErrThreadLocked); return }
 	m.compose = composeReplyBody
 	m.draftThreadID = id
 	m.draftLines = nil
@@ -771,7 +771,7 @@ func (m *sessionModel) startEditTopic(args []string) {
 	if err != nil { m.fail(errors.New("usage: edit-topic <id> (from inside a topic)")); return }
 	t, err := m.boards.GetThreadByID(id)
 	if err != nil { m.fail(err); return }
-	if t.Author.ID != m.user.ID && !m.isModerator() { m.fail(forum.ErrPermissionDenied); return }
+	if t.Author.ID != m.user.ID && !m.isModerator() { m.fail(service.ErrPermissionDenied); return }
 	m.compose, m.draftThreadID, m.draftTitle = composeEditTitle, id, t.Title
 	board, boardErr := m.boards.GetBoardByID(t.BoardID)
 	if boardErr == nil { m.cwd = path.Join("/boards", board.Slug, strconv.Itoa(id)) }
@@ -789,7 +789,7 @@ func (m *sessionModel) startEditReply(args []string) {
 	if err != nil { m.fail(err); return }
 	for _, c := range comments {
 		if c.ID == id {
-			if c.Author.ID != m.user.ID && !m.isModerator() { m.fail(forum.ErrPermissionDenied); return }
+			if c.Author.ID != m.user.ID && !m.isModerator() { m.fail(service.ErrPermissionDenied); return }
 			m.compose, m.draftThreadID, m.draftReplyID = composeEditReplyBody, threadID, id
 			m.draftLines = nil
 			m.addOutput("Enter the replacement reply. Finish with '.'; /cancel aborts.")
@@ -797,7 +797,7 @@ func (m *sessionModel) startEditReply(args []string) {
 			return
 		}
 	}
-	m.fail(forum.ErrCommentNotFound)
+	m.fail(service.ErrCommentNotFound)
 }
 
 func (m *sessionModel) handleComposition(line string) {
@@ -887,14 +887,14 @@ func (m *sessionModel) deleteOwnReply(args []string) {
 }
 
 func (m *sessionModel) moderateThread(args []string) {
-	if !m.isModerator() { m.fail(forum.ErrPermissionDenied); return }
+	if !m.isModerator() { m.fail(service.ErrPermissionDenied); return }
 	if len(args) < 2 { m.addOutput("Usage: " + args[0] + " <topic-id> [reason]"); return }
 	id, err := strconv.Atoi(args[1]); if err != nil { m.addOutput("Invalid topic ID."); return }
 	reason := strings.TrimSpace(strings.Join(args[2:], " "))
 	switch args[0] {
-	case "lock": err = m.boards.SetThreadStatus(id, m.user.ID, forum.ThreadLocked, reason)
-	case "unlock", "restore-thread": err = m.boards.SetThreadStatus(id, m.user.ID, forum.ThreadOpen, reason)
-	case "hide-thread": err = m.boards.SetThreadStatus(id, m.user.ID, forum.ThreadHidden, reason)
+	case "lock": err = m.boards.SetThreadStatus(id, m.user.ID, service.ThreadLocked, reason)
+	case "unlock", "restore-thread": err = m.boards.SetThreadStatus(id, m.user.ID, service.ThreadOpen, reason)
+	case "hide-thread": err = m.boards.SetThreadStatus(id, m.user.ID, service.ThreadHidden, reason)
 	case "pin": err = m.boards.SetThreadPinned(id, m.user.ID, true, reason)
 	case "unpin": err = m.boards.SetThreadPinned(id, m.user.ID, false, reason)
 	case "delete-thread": err = m.boards.DeleteThread(id, m.user.ID, true, reason)
@@ -903,7 +903,7 @@ func (m *sessionModel) moderateThread(args []string) {
 }
 
 func (m *sessionModel) showModlog(args []string) {
-	if !m.isModerator() { m.fail(forum.ErrPermissionDenied); return }
+	if !m.isModerator() { m.fail(service.ErrPermissionDenied); return }
 	entries, err := m.boards.ListModerationLog(100)
 	if err != nil { m.fail(err); return }
 	if len(entries) == 0 { m.addOutput("No moderation actions recorded."); return }
@@ -913,7 +913,7 @@ func (m *sessionModel) showModlog(args []string) {
 }
 
 func (m *sessionModel) boardAdmin(args []string) {
-	if !m.isAdmin() { m.fail(forum.ErrPermissionDenied); return }
+	if !m.isAdmin() { m.fail(service.ErrPermissionDenied); return }
 	if len(args) == 0 { m.addOutput("Usage: board <create|update|archive|restore|list> ..."); return }
 	switch args[0] {
 	case "list":
@@ -927,7 +927,7 @@ func (m *sessionModel) boardAdmin(args []string) {
 		if err := m.boards.UpdateBoard(args[1], args[2], strings.Join(args[3:], " ")); err != nil { m.fail(err) } else { m.addOutput("Board updated.") }
 	case "archive", "restore":
 		if len(args) != 2 { m.addOutput("Usage: board " + args[0] + " <slug>"); return }
-		status := forum.BoardArchived; if args[0] == "restore" { status = forum.BoardActive }
+		status := service.BoardArchived; if args[0] == "restore" { status = service.BoardActive }
 		if err := m.boards.SetBoardStatus(args[1], status); err != nil { m.fail(err) } else { m.addOutput("Board status updated.") }
 	default:
 		m.addOutput("Unknown board subcommand.")
@@ -935,7 +935,7 @@ func (m *sessionModel) boardAdmin(args []string) {
 }
 
 func (m *sessionModel) inviteAdmin(args []string) {
-	if !m.isAdmin() { m.fail(forum.ErrPermissionDenied); return }
+	if !m.isAdmin() { m.fail(service.ErrPermissionDenied); return }
 	if len(args) == 0 { m.addOutput("Usage: invite <create|list|revoke>"); return }
 	switch args[0] {
 	case "list":
@@ -966,7 +966,7 @@ func (m *sessionModel) inviteAdmin(args []string) {
 }
 
 func (m *sessionModel) listUsers() {
-	if !m.isAdmin() { m.fail(forum.ErrPermissionDenied); return }
+	if !m.isAdmin() { m.fail(service.ErrPermissionDenied); return }
 	users, err := m.users.ListUsers()
 	if err != nil { m.fail(err); return }
 	m.addOutput("USERNAME              ROLE       STATUS")
@@ -974,7 +974,7 @@ func (m *sessionModel) listUsers() {
 }
 
 func (m *sessionModel) userAdmin(args []string) {
-	if !m.isAdmin() { m.fail(forum.ErrPermissionDenied); return }
+	if !m.isAdmin() { m.fail(service.ErrPermissionDenied); return }
 	if len(args) != 2 && len(args) != 3 { m.addOutput("Usage: user role <username> <role> | user suspend|activate <username>"); return }
 	var err error
 	switch args[0] {
@@ -983,10 +983,10 @@ func (m *sessionModel) userAdmin(args []string) {
 		err = m.users.SetUserRole(args[1], args[2])
 	case "suspend":
 		if len(args) != 2 { m.addOutput("Usage: user suspend <username>"); return }
-		err = m.users.SetUserStatus(args[1], forum.StatusSuspended)
+		err = m.users.SetUserStatus(args[1], service.StatusSuspended)
 	case "activate":
 		if len(args) != 2 { m.addOutput("Usage: user activate <username>"); return }
-		err = m.users.SetUserStatus(args[1], forum.StatusActive)
+		err = m.users.SetUserStatus(args[1], service.StatusActive)
 	default:
 		m.addOutput("Unknown user subcommand."); return
 	}
@@ -994,9 +994,9 @@ func (m *sessionModel) userAdmin(args []string) {
 }
 
 func (m *sessionModel) isModerator() bool {
-	return m.user.Role == forum.RoleModerator || m.user.Role == forum.RoleAdmin || m.user.IsAdmin
+	return m.user.Role == service.RoleModerator || m.user.Role == service.RoleAdmin || m.user.IsAdmin
 }
-func (m *sessionModel) isAdmin() bool { return m.user.Role == forum.RoleAdmin || m.user.IsAdmin }
+func (m *sessionModel) isAdmin() bool { return m.user.Role == service.RoleAdmin || m.user.IsAdmin }
 
 func (m *sessionModel) targetID(args []string) (int, error) {
 	if len(args) == 1 { id, err := strconv.Atoi(args[0]); if err == nil { return id, nil } }

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sector-f/ssh-cli-forum/internal/chatroom"
+	"github.com/sector-f/ssh-cli-forum/internal/service"
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
@@ -16,7 +16,7 @@ type Service struct {
 	logger  *zap.Logger
 	db      *sql.DB
 	mu      sync.Mutex
-	chatHub *chatroom.Hub
+	chatHub *service.ChatHub
 }
 
 func Open(logger *zap.Logger, path string) (*Service, error) {
@@ -26,7 +26,7 @@ func Open(logger *zap.Logger, path string) (*Service, error) {
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	s := &Service{logger: logger, db: db, chatHub: chatroom.NewHub()}
+	s := &Service{logger: logger, db: db, chatHub: service.NewChatHub()}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err

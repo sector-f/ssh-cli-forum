@@ -7,7 +7,7 @@ A small forum reached over SSH, built with Go, Wish, Bubble Tea, and SQLite.
 The SSH server defaults to `127.0.0.1:2222` and uses `./forum.db`.
 
 ```sh
-go run .
+go run ./cmd/server
 ```
 
 Users authenticate with SSH public keys. New accounts are created through the `signup` SSH username and require an invitation code. The signup flow and single-use invite behavior are retained.

@@ -1,4 +1,4 @@
-package signup
+package app
 
 import (
 	"fmt"
@@ -6,11 +6,11 @@ import (
 
 	"github.com/charmbracelet/ssh"
 	"github.com/chzyer/readline"
-	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/service"
 	"go.uber.org/zap"
 )
 
-func Handler(logger *zap.Logger, s ssh.Session, service forum.UserService) error {
+func handleSignup(logger *zap.Logger, s ssh.Session, service service.UserService) error {
 	rlConfig := &readline.Config{
 		HistoryFile:  "",
 		HistoryLimit: 0,

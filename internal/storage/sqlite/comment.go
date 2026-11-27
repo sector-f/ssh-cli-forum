@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sector-f/ssh-cli-forum/forum"
+	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
 func (s *Service) CreateComment(threadID, authorID int, body string) error {
@@ -18,19 +18,19 @@ func (s *Service) CreateComment(threadID, authorID int, body string) error {
 	var boardStatus, threadStatus string
 	err = tx.QueryRow(`SELECT b.status, t.status FROM threads t JOIN boards b ON b.id = t.board_id
 		WHERE t.id = ? AND t.deleted_at IS NULL`, threadID).Scan(&boardStatus, &threadStatus)
-	if errors.Is(err, sql.ErrNoRows) { return forum.ErrThreadNotFound }
+	if errors.Is(err, sql.ErrNoRows) { return service.ErrThreadNotFound }
 	if err != nil { return err }
-	if boardStatus != forum.BoardActive { return forum.ErrReadOnly }
-	if threadStatus == forum.ThreadLocked { return forum.ErrThreadLocked }
-	if threadStatus == forum.ThreadHidden { return forum.ErrThreadNotFound }
+	if boardStatus != service.BoardActive { return service.ErrReadOnly }
+	if threadStatus == service.ThreadLocked { return service.ErrThreadLocked }
+	if threadStatus == service.ThreadHidden { return service.ErrThreadNotFound }
 	now := nowText()
 	if _, err := tx.Exec("INSERT INTO comments (thread_id, author_id, body, posted_at) VALUES (?, ?, ?, ?)", threadID, authorID, body, now); err != nil { return err }
 	if _, err := tx.Exec("UPDATE threads SET last_activity_at = ?, updated_at = ? WHERE id = ?", now, now, threadID); err != nil { return err }
 	return tx.Commit()
 }
 
-func (s *Service) ListComments(threadID int) ([]forum.Comment, error) {
-	var all []forum.Comment
+func (s *Service) ListComments(threadID int) ([]service.Comment, error) {
+	var all []service.Comment
 	for page := 1; ; page++ {
 		comments, total, err := s.ListCommentsPage(threadID, page, 100)
 		if err != nil { return nil, err }
@@ -39,7 +39,7 @@ func (s *Service) ListComments(threadID int) ([]forum.Comment, error) {
 	}
 }
 
-func (s *Service) ListCommentsPage(threadID, page, pageSize int) ([]forum.Comment, int, error) {
+func (s *Service) ListCommentsPage(threadID, page, pageSize int) ([]service.Comment, int, error) {
 	if page < 1 { page = 1 }
 	if pageSize < 1 || pageSize > 100 { pageSize = 10 }
 	var total int
@@ -51,9 +51,9 @@ func (s *Service) ListCommentsPage(threadID, page, pageSize int) ([]forum.Commen
 		ORDER BY c.posted_at ASC, c.id ASC LIMIT ? OFFSET ?`, threadID, pageSize, (page-1)*pageSize)
 	if err != nil { return nil, 0, err }
 	defer rows.Close()
-	var comments []forum.Comment
+	var comments []service.Comment
 	for rows.Next() {
-		var c forum.Comment
+		var c service.Comment
 		var authorID int
 		var posted, created, last sql.NullString
 		var display, role, status string
@@ -62,7 +62,7 @@ func (s *Service) ListCommentsPage(threadID, page, pageSize int) ([]forum.Commen
 			&c.Author.Username, &display, &role, &status, &isAdmin, &created, &last); err != nil { return nil, 0, err }
 		c.PostedAt = parseTime(posted.String)
 		c.Author.ID, c.Author.DisplayName, c.Author.Role, c.Author.Status = authorID, display, role, status
-		c.Author.IsAdmin = isAdmin || role == forum.RoleAdmin
+		c.Author.IsAdmin = isAdmin || role == service.RoleAdmin
 		c.Author.CreatedAt, c.Author.LastSeenAt = parseTime(created.String), parseTime(last.String)
 		comments = append(comments, c)
 	}
@@ -74,9 +74,9 @@ func (s *Service) UpdateComment(id, actorID int, body string, moderator bool) er
 	if body == "" { return errors.New("reply cannot be empty") }
 	var owner int
 	err := s.db.QueryRow("SELECT author_id FROM comments WHERE id = ? AND deleted_at IS NULL", id).Scan(&owner)
-	if errors.Is(err, sql.ErrNoRows) { return forum.ErrCommentNotFound }
+	if errors.Is(err, sql.ErrNoRows) { return service.ErrCommentNotFound }
 	if err != nil { return err }
-	if owner != actorID && !moderator { return forum.ErrPermissionDenied }
+	if owner != actorID && !moderator { return service.ErrPermissionDenied }
 	_, err = s.db.Exec("UPDATE comments SET body = ?, updated_at = ? WHERE id = ?", body, nowText(), id)
 	return err
 }
@@ -87,24 +87,24 @@ func (s *Service) DeleteComment(id, actorID int, moderator bool, reason string) 
 	defer tx.Rollback()
 	var owner, threadID int
 	err = tx.QueryRow("SELECT author_id, thread_id FROM comments WHERE id = ? AND deleted_at IS NULL", id).Scan(&owner, &threadID)
-	if errors.Is(err, sql.ErrNoRows) { return forum.ErrCommentNotFound }
+	if errors.Is(err, sql.ErrNoRows) { return service.ErrCommentNotFound }
 	if err != nil { return err }
-	if owner != actorID && !moderator { return forum.ErrPermissionDenied }
+	if owner != actorID && !moderator { return service.ErrPermissionDenied }
 	if _, err := tx.Exec("UPDATE comments SET deleted_at = ? WHERE id = ?", nowText(), id); err != nil { return err }
 	if moderator { if err := addModlog(tx, actorID, "reply_deleted", "comment", id, reason); err != nil { return err } }
 	if _, err := tx.Exec("UPDATE threads SET last_activity_at = ? WHERE id = ?", nowText(), threadID); err != nil { return err }
 	return tx.Commit()
 }
 
-func (s *Service) ListModerationLog(limit int) ([]forum.ModerationEntry, error) {
+func (s *Service) ListModerationLog(limit int) ([]service.ModerationEntry, error) {
 	if limit < 1 || limit > 500 { limit = 100 }
 	rows, err := s.db.Query(`SELECT m.id, m.actor_id, u.username, m.action, m.target_type, m.target_id, m.reason, m.created_at
 		FROM moderation_log m JOIN users u ON u.id = m.actor_id ORDER BY m.id DESC LIMIT ?`, limit)
 	if err != nil { return nil, err }
 	defer rows.Close()
-	var entries []forum.ModerationEntry
+	var entries []service.ModerationEntry
 	for rows.Next() {
-		var e forum.ModerationEntry
+		var e service.ModerationEntry
 		var created string
 		if err := rows.Scan(&e.ID, &e.Actor.ID, &e.Actor.Username, &e.Action, &e.TargetType, &e.TargetID, &e.Reason, &created); err != nil { return nil, err }
 		e.CreatedAt = parseTime(created)

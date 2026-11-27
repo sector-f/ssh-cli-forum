@@ -1,21 +1,20 @@
-package chatroom
+package service
 
 import (
 	"context"
 	"testing"
 	"time"
 
-	"github.com/sector-f/ssh-cli-forum/forum"
 )
 
 func TestHubPublishesOnlyToMatchingChannel(t *testing.T) {
 	hub := NewHub()
-	global, cancelGlobal := hub.Subscribe(context.Background(), forum.GlobalChatChannel)
+	global, cancelGlobal := hub.Subscribe(context.Background(), GlobalChatChannel)
 	defer cancelGlobal()
 	other, cancelOther := hub.Subscribe(context.Background(), "development")
 	defer cancelOther()
 
-	message := forum.ChatMessage{ID: 1, ChannelSlug: forum.GlobalChatChannel, Text: "hello"}
+	message := ChatMessage{ID: 1, ChannelSlug: GlobalChatChannel, Text: "hello"}
 	hub.Publish(message)
 
 	select {
@@ -37,14 +36,14 @@ func TestHubPublishesOnlyToMatchingChannel(t *testing.T) {
 func TestHubCancelClosesSubscriptionAndContextCancels(t *testing.T) {
 	hub := NewHub()
 	ctx, cancelContext := context.WithCancel(context.Background())
-	events, cancel := hub.Subscribe(ctx, forum.GlobalChatChannel)
+	events, cancel := hub.Subscribe(ctx, GlobalChatChannel)
 	cancel()
 	cancel()
 	if _, ok := <-events; ok {
 		t.Fatal("cancelled subscription remained open")
 	}
 
-	events, _ = hub.Subscribe(ctx, forum.GlobalChatChannel)
+	events, _ = hub.Subscribe(ctx, GlobalChatChannel)
 	cancelContext()
 	select {
 	case _, ok := <-events:

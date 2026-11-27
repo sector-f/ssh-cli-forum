@@ -1,4 +1,4 @@
-package forum
+package service
 
 import (
 	"context"
@@ -8,8 +8,9 @@ import (
 	"github.com/charmbracelet/ssh"
 )
 
+const SignupUsername = "signup"
+
 var (
-	SignupUsername = "signup"
 
 	ErrUserExists       = errors.New("username already exists")
 	ErrUsernameInvalid  = errors.New("username is not valid")

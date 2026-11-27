@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/ssh"
-	"github.com/sector-f/ssh-cli-forum/forum"
-	"github.com/sector-f/ssh-cli-forum/sqlite"
+	"github.com/sector-f/ssh-cli-forum/internal/service"
+	"github.com/sector-f/ssh-cli-forum/internal/storage/sqlite"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -29,7 +29,7 @@ func main() {
 		Short: "Manage the SSH community forum database",
 		SilenceUsage: true,
 	}
-	root.PersistentFlags().StringVar(&dbPath, "db", "./forum.db", "Path to the SQLite database")
+	root.PersistentFlags().StringVar(&dbPath, "db", "./service.db", "Path to the SQLite database")
 
 	root.AddCommand(dbCommand(), adminCommand(), boardCommand(), inviteCommand(), userCommand(), moderationCommand())
 	if err := root.Execute(); err != nil {
@@ -148,7 +148,7 @@ func boardCommand() *cobra.Command {
 			})
 		},
 	}
-	cmd.AddCommand(create, list, update, boardStatusCommand("archive", forum.BoardArchived), boardStatusCommand("restore", forum.BoardActive))
+	cmd.AddCommand(create, list, update, boardStatusCommand("archive", service.BoardArchived), boardStatusCommand("restore", service.BoardActive))
 	return cmd
 }
 
@@ -242,7 +242,7 @@ func userCommand() *cobra.Command {
 			})
 		},
 	})
-	cmd.AddCommand(userStatusCommand("suspend", forum.StatusSuspended), userStatusCommand("activate", forum.StatusActive))
+	cmd.AddCommand(userStatusCommand("suspend", service.StatusSuspended), userStatusCommand("activate", service.StatusActive))
 	return cmd
 }
 
