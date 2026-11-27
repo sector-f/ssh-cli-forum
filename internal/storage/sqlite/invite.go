@@ -11,9 +11,6 @@ import (
 )
 
 func (s *Store) CreateInvite(code string, expiresAt time.Time, isAdmin bool) error {
-	if code == "" {
-		return errors.New("invite code cannot be empty")
-	}
 	_, err := s.db.Exec("INSERT INTO invites (code, created_at, expires_at, is_admin) VALUES (?, ?, ?, ?)", code, nowText(), expiresAt.UTC().Format(time.RFC3339Nano), isAdmin)
 	return err
 }

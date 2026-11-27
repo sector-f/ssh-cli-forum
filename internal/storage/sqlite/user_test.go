@@ -1,6 +1,10 @@
 package sqlite
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/sector-f/ssh-cli-forum/internal/service"
+)
 
 func TestValidUsernames(t *testing.T) {
 	tt := []struct {
@@ -76,7 +80,7 @@ func TestValidUsernames(t *testing.T) {
 	}
 
 	for _, test := range tt {
-		err := isValidUsername(test.username)
+		err := service.ValidateUsername(test.username)
 		if (test.valid && err == nil) || !test.valid && err != nil {
 			continue
 		}

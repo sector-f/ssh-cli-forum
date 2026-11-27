@@ -2,88 +2,35 @@ package sqlite
 
 import (
 	"database/sql"
-	"errors"
-	"regexp"
+	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/ssh"
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-var (
-	minUsernameLength = 3
-	maxUsernameLength = 20
-	validUsername     = regexp.MustCompile("^[A-Za-z0-9_-]+$")
-)
-
-func (s *Store) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) error {
-	if err := isValidUsername(username); err != nil {
-		return err
-	}
+func (s *Store) CreateUser(username string, pubKey ssh.PublicKey, inviteCode, role string) error {
 	if pubKey == nil {
-		return service.ErrUsernameInvalid
+		return fmt.Errorf("public key is required")
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
+	_, err := s.db.Exec(`INSERT INTO users (username, pubkey, invite_code, is_admin, role, status, created_at)
+		VALUES (?, ?, ?, ?, ?, 'active', ?)`,
+		username, pubKey.Marshal(), inviteCode, role == service.RoleAdmin, role, nowText())
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unique") {
+		return service.ErrUserExists
 	}
-	defer tx.Rollback()
-
-	var expires time.Time
-	var isAdmin bool
-	var revoked sql.NullString
-	err = tx.QueryRow("SELECT expires_at, is_admin, revoked_at FROM invites WHERE code = ?", inviteCode).Scan(&expires, &isAdmin, &revoked)
-	if errors.Is(err, sql.ErrNoRows) {
-		return service.ErrInviteInvalid
-	}
-	if err != nil {
-		return err
-	}
-	if revoked.Valid {
-		return service.ErrInviteRevoked
-	}
-	if time.Now().After(expires) {
-		return service.ErrInviteExpired
-	}
-
-	var used int
-	if err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE invite_code = ?", inviteCode).Scan(&used); err != nil {
-		return err
-	}
-	if used > 0 {
-		return service.ErrInviteUsed
-	}
-	_, err = tx.Exec(`INSERT INTO users (username, pubkey, invite_code, is_admin, role, status, created_at)
-		VALUES (?, ?, ?, ?, ?, 'active', ?)`, username, pubKey.Marshal(), inviteCode, isAdmin, roleForAdmin(isAdmin), nowText())
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "unique") {
-			return service.ErrUserExists
-		}
-		return err
-	}
-	return tx.Commit()
+	return err
 }
 
 func (s *Store) BootstrapAdmin(username string, pubKey ssh.PublicKey) error {
-	if err := isValidUsername(username); err != nil {
-		return err
-	}
 	if pubKey == nil {
-		return service.ErrUsernameInvalid
+		return fmt.Errorf("public key is required")
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	var count int
-	if err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin' OR is_admin = 1").Scan(&count); err != nil {
-		return err
-	}
-	if count > 0 {
-		return service.ErrAdminExists
-	}
 	code, err := randomToken(24)
 	if err != nil {
 		return err
@@ -173,81 +120,26 @@ func (s *Store) ListUsers() ([]service.User, error) {
 }
 
 func (s *Store) SetUserRole(username, role string) error {
-	if role != service.RoleMember && role != service.RoleModerator && role != service.RoleAdmin {
-		return errors.New("role must be member, moderator, or admin")
-	}
-	tx, err := s.db.Begin()
+	res, err := s.db.Exec("UPDATE users SET role = ?, is_admin = ? WHERE username = ? COLLATE NOCASE", role, role == service.RoleAdmin, username)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	var current string
-	if err := tx.QueryRow("SELECT role FROM users WHERE username = ? COLLATE NOCASE", username).Scan(&current); errors.Is(err, sql.ErrNoRows) {
+	n, err := res.RowsAffected()
+	if err == nil && n == 0 {
 		return service.ErrUserNotFound
-	} else if err != nil {
-		return err
 	}
-	if current == service.RoleAdmin && role != service.RoleAdmin {
-		var count int
-		if err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin' OR is_admin = 1").Scan(&count); err != nil {
-			return err
-		}
-		if count <= 1 {
-			return errors.New("cannot demote the last administrator")
-		}
-	}
-	if _, err := tx.Exec("UPDATE users SET role = ?, is_admin = ? WHERE username = ? COLLATE NOCASE", role, role == service.RoleAdmin, username); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return err
 }
 
 func (s *Store) SetUserStatus(username, status string) error {
-	if status != service.StatusActive && status != service.StatusSuspended {
-		return errors.New("status must be active or suspended")
-	}
-	tx, err := s.db.Begin()
+	res, err := s.db.Exec("UPDATE users SET status = ? WHERE username = ? COLLATE NOCASE", status, username)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
-	var role string
-	if err := tx.QueryRow("SELECT role FROM users WHERE username = ? COLLATE NOCASE", username).Scan(&role); errors.Is(err, sql.ErrNoRows) {
+	n, err := res.RowsAffected()
+	if err == nil && n == 0 {
 		return service.ErrUserNotFound
-	} else if err != nil {
-		return err
 	}
-	if status == service.StatusSuspended && role == service.RoleAdmin {
-		var activeAdmins int
-		if err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'").Scan(&activeAdmins); err != nil {
-			return err
-		}
-		if activeAdmins <= 1 {
-			return errors.New("cannot suspend the last active administrator")
-		}
-	}
-	if _, err := tx.Exec("UPDATE users SET status = ? WHERE username = ? COLLATE NOCASE", status, username); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return err
 }
 
-func roleForAdmin(admin bool) string {
-	if admin {
-		return service.RoleAdmin
-	}
-	return service.RoleMember
-}
-
-func isValidUsername(value string) error {
-	if value == service.SignupUsername || !validUsername.MatchString(value) {
-		return service.ErrUsernameInvalid
-	}
-	if len(value) < minUsernameLength {
-		return service.ErrUsernameTooShort
-	}
-	if len(value) > maxUsernameLength {
-		return service.ErrUsernameTooLong
-	}
-	return nil
-}

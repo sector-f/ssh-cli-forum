@@ -127,7 +127,7 @@ func adminCommand() *cobra.Command {
 				return fmt.Errorf("parse public key: %w", err)
 			}
 			return withDB(func(s *sqlite.Store) error {
-				if err := s.BootstrapAdmin(username, key); err != nil {
+				if err := service.NewAccountService(s).BootstrapAdmin(username, key); err != nil {
 					return err
 				}
 				fmt.Printf("Created initial administrator account: %s\n", username)
@@ -227,7 +227,7 @@ func inviteCommand() *cobra.Command {
 			}
 			expires := time.Now().Add(duration)
 			return withDB(func(s *sqlite.Store) error {
-				if err := s.CreateInvite(code, expires, admin); err != nil {
+				if err := service.NewAccountService(s).CreateInvite(code, expires, admin); err != nil {
 					return err
 				}
 				fmt.Printf("Invitation created\nCode:    %s\nExpires: %s\nAdmin:   %t\n", code, expires.UTC().Format(time.RFC3339), admin)
@@ -301,7 +301,7 @@ func userCommand() *cobra.Command {
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withDB(func(s *sqlite.Store) error {
-				if err := s.SetUserRole(args[0], args[1]); err != nil {
+				if err := service.NewAccountService(s).SetUserRole(args[0], args[1]); err != nil {
 					return err
 				}
 				fmt.Printf("Updated %s role to %s.\n", args[0], args[1])
@@ -319,7 +319,7 @@ func userStatusCommand(name, status string) *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withDB(func(s *sqlite.Store) error {
-				if err := s.SetUserStatus(args[0], status); err != nil {
+				if err := service.NewAccountService(s).SetUserStatus(args[0], status); err != nil {
 					return err
 				}
 				fmt.Printf("Updated %s status to %s.\n", args[0], status)

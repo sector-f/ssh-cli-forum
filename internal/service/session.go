@@ -108,52 +108,14 @@ func (s *Session) SetUserRole(username, role string) error {
 	if _, err := s.requireAdmin(); err != nil {
 		return err
 	}
-	target, err := s.UserService.GetUserByUsername(username)
-	if err != nil {
-		return err
-	}
-	if (target.Role == RoleAdmin || target.IsAdmin) && role != RoleAdmin {
-		users, err := s.UserService.ListUsers()
-		if err != nil {
-			return err
-		}
-		admins := 0
-		for _, user := range users {
-			if user.Role == RoleAdmin || user.IsAdmin {
-				admins++
-			}
-		}
-		if admins <= 1 {
-			return errors.New("cannot demote the last administrator")
-		}
-	}
-	return s.UserService.SetUserRole(username, role)
+	return NewAccountService(s.UserService).SetUserRole(username, role)
 }
 
 func (s *Session) SetUserStatus(username, status string) error {
 	if _, err := s.requireAdmin(); err != nil {
 		return err
 	}
-	target, err := s.UserService.GetUserByUsername(username)
-	if err != nil {
-		return err
-	}
-	if (target.Role == RoleAdmin || target.IsAdmin) && status == StatusSuspended {
-		users, err := s.UserService.ListUsers()
-		if err != nil {
-			return err
-		}
-		activeAdmins := 0
-		for _, user := range users {
-			if (user.Role == RoleAdmin || user.IsAdmin) && user.Status != StatusSuspended {
-				activeAdmins++
-			}
-		}
-		if activeAdmins <= 1 {
-			return errors.New("cannot suspend the last active administrator")
-		}
-	}
-	return s.UserService.SetUserStatus(username, status)
+	return NewAccountService(s.UserService).SetUserStatus(username, status)
 }
 
 func (s *Session) CreateBoard(name string) error {

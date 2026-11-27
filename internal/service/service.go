@@ -30,6 +30,9 @@ var (
 	ErrReadOnly         = errors.New("this board is read-only")
 	ErrThreadLocked     = errors.New("this topic is locked")
 	ErrAdminExists      = errors.New("an administrator account already exists")
+	ErrLastAdmin        = errors.New("cannot remove the last administrator")
+	ErrInvalidRole      = errors.New("role must be member, moderator, or admin")
+	ErrInvalidStatus    = errors.New("status must be active or suspended")
 
 	ErrUnknown = errors.New("unknown error")
 )
@@ -40,7 +43,7 @@ type UserService interface {
 	GetInvite(code string) (Invite, error)
 	RevokeInvite(code string) error
 
-	CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) error
+	CreateUser(username string, pubKey ssh.PublicKey, inviteCode, role string) error
 	BootstrapAdmin(username string, pubKey ssh.PublicKey) error
 	GetUserByID(id int) (User, error)
 	GetUserByUsername(username string) (User, error)

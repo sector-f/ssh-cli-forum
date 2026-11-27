@@ -45,13 +45,14 @@ func Run() error {
 	}()
 
 	chat := service.NewChatService(store)
+	accounts := service.NewAccountService(store)
 
 	server, err := wish.NewServer(
 		wish.WithAddress(defaultAddress),
 		wish.WithPublicKeyAuth(authHandler(logger, store)),
 		wish.WithMiddleware(
 			bubbletea.MiddlewareWithProgramHandler(tui.Handler(store, store, chat), termenv.Ascii),
-			signupMiddleware(logger, store),
+			signupMiddleware(logger, accounts),
 			loggingMiddleware(logger),
 			activeterm.Middleware(),
 		),
@@ -107,14 +108,14 @@ func loggingMiddleware(logger *zap.Logger) wish.Middleware {
 	}
 }
 
-func signupMiddleware(logger *zap.Logger, users service.UserService) wish.Middleware {
+func signupMiddleware(logger *zap.Logger, accounts *service.AccountService) wish.Middleware {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(sess ssh.Session) {
 			if sess.User() != service.SignupUsername {
 				next(sess)
 				return
 			}
-			if err := handleSignup(logger, sess, users); err != nil {
+			if err := handleSignup(logger, sess, accounts); err != nil {
 				fmt.Fprintf(sess, "Error: %s\r\n", err)
 				_ = sess.Exit(1)
 				return
