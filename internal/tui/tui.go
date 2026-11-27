@@ -463,6 +463,7 @@ func (m *sessionModel) execute(line string) (bool, tea.Cmd) {
 	}
 
 	cmdArgs := args[1:]
+	prefix := ""
 	requiredPermission := cmd.Permission
 	if len(cmd.Subcommands) > 0 {
 		if len(cmdArgs) == 0 {
@@ -480,12 +481,17 @@ func (m *sessionModel) execute(line string) (bool, tea.Cmd) {
 			return false, nil
 		}
 		requiredPermission = effectivePermission(cmd, subcommand)
+		prefix = cmd.Name
 		cmd = subcommand
 		cmdArgs = cmdArgs[1:]
 	}
 
 	if !m.hasPermission(requiredPermission) {
 		m.fail(service.ErrPermissionDenied)
+		return false, nil
+	}
+	if len(cmdArgs) < requiredArguments(cmd) {
+		m.addOutput("Usage: " + commandUsage(cmd, prefix))
 		return false, nil
 	}
 	if cmd.Handler == nil {
@@ -1135,248 +1141,6 @@ func (m *sessionModel) deleteOwnReply(args []string) {
 	m.addOutput("Reply deleted.")
 }
 
-func (m *sessionModel) moderateThread(args []string) {
-	if !m.isModerator() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	if len(args) < 2 {
-		m.addOutput("Usage: " + args[0] + " <topic-id> [reason]")
-		return
-	}
-	id, err := strconv.Atoi(args[1])
-	if err != nil {
-		m.addOutput("Invalid topic ID.")
-		return
-	}
-	reason := strings.TrimSpace(strings.Join(args[2:], " "))
-	switch args[0] {
-	case "lock":
-		err = m.boards.SetThreadStatus(id, m.user.ID, service.ThreadLocked, reason)
-	case "unlock", "restore-thread":
-		err = m.boards.SetThreadStatus(id, m.user.ID, service.ThreadOpen, reason)
-	case "hide-thread":
-		err = m.boards.SetThreadStatus(id, m.user.ID, service.ThreadHidden, reason)
-	case "pin":
-		err = m.boards.SetThreadPinned(id, m.user.ID, true, reason)
-	case "unpin":
-		err = m.boards.SetThreadPinned(id, m.user.ID, false, reason)
-	case "delete-thread":
-		err = m.boards.DeleteThread(id, m.user.ID, true, reason)
-	}
-	if err != nil {
-		m.fail(err)
-	} else {
-		m.addOutput("Moderation action completed.")
-	}
-}
-
-func (m *sessionModel) showModlog(args []string) {
-	if !m.isModerator() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	entries, err := m.boards.ListModerationLog(100)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	if len(entries) == 0 {
-		m.addOutput("No moderation actions recorded.")
-		return
-	}
-	for _, e := range entries {
-		m.addOutput(fmt.Sprintf("%s  %s  %s #%d  by %s  %s", e.CreatedAt.Format("2006-01-02 15:04"), e.Action, e.TargetType, e.TargetID, e.Actor.Username, e.Reason))
-	}
-}
-
-func (m *sessionModel) boardAdmin(args []string) {
-	if !m.isAdmin() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	if len(args) == 0 {
-		m.addOutput("Usage: board <create|update|archive|restore|list> ...")
-		return
-	}
-	switch args[0] {
-	case "list":
-		boards, err := m.boards.ListBoards()
-		if err != nil {
-			m.fail(err)
-			return
-		}
-		m.printBoards(boards)
-	case "create":
-		if len(args) < 3 {
-			m.addOutput(`Usage: board create <slug> "Name" ["Description"]`)
-			return
-		}
-		description := ""
-		if len(args) > 3 {
-			description = strings.Join(args[3:], " ")
-		}
-		if err := m.boards.CreateBoardWithDetails(args[1], args[2], description, 0, m.user.ID); err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Board created: " + args[1])
-		}
-	case "update":
-		if len(args) < 4 {
-			m.addOutput(`Usage: board update <slug> "Name" "Description"`)
-			return
-		}
-		if err := m.boards.UpdateBoard(args[1], args[2], strings.Join(args[3:], " ")); err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Board updated.")
-		}
-	case "archive", "restore":
-		if len(args) != 2 {
-			m.addOutput("Usage: board " + args[0] + " <slug>")
-			return
-		}
-		status := service.BoardArchived
-		if args[0] == "restore" {
-			status = service.BoardActive
-		}
-		if err := m.boards.SetBoardStatus(args[1], status); err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Board status updated.")
-		}
-	default:
-		m.addOutput("Unknown board subcommand.")
-	}
-}
-
-func (m *sessionModel) inviteAdmin(args []string) {
-	if !m.isAdmin() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	if len(args) == 0 {
-		m.addOutput("Usage: invite <create|list|revoke>")
-		return
-	}
-	switch args[0] {
-	case "list":
-		invites, err := m.users.ListInvites()
-		if err != nil {
-			m.fail(err)
-			return
-		}
-		for _, i := range invites {
-			status := "available"
-			if i.RedeemedBy != "" {
-				status = "redeemed by " + i.RedeemedBy
-			}
-			if !i.RevokedAt.IsZero() {
-				status = "revoked"
-			} else if time.Now().After(i.ExpiresAt) {
-				status = "expired"
-			}
-			m.addOutput(fmt.Sprintf("%s  %-20s expires %s  admin=%t", i.Code, status, i.ExpiresAt.Format("2006-01-02 15:04"), i.IsAdmin))
-		}
-	case "create":
-		duration := 7 * 24 * time.Hour
-		admin := false
-		for _, arg := range args[1:] {
-			if arg == "--admin" {
-				admin = true
-				continue
-			}
-			if d, err := time.ParseDuration(arg); err == nil {
-				duration = d
-			} else {
-				m.addOutput("Invalid duration: " + arg)
-				return
-			}
-		}
-		if duration <= 0 {
-			m.addOutput("Invite duration must be positive.")
-			return
-		}
-		code, err := newInviteCode()
-		if err == nil {
-			err = m.users.CreateInvite(code, time.Now().Add(duration), admin)
-		}
-		if err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Invitation created: " + code)
-			m.addOutput("Expires: " + time.Now().Add(duration).Format(time.RFC3339))
-		}
-	case "revoke":
-		if len(args) != 2 {
-			m.addOutput("Usage: invite revoke <code>")
-			return
-		}
-		if err := m.users.RevokeInvite(args[1]); err != nil {
-			m.fail(err)
-		} else {
-			m.addOutput("Invitation revoked.")
-		}
-	default:
-		m.addOutput("Unknown invite subcommand.")
-	}
-}
-
-func (m *sessionModel) listUsers() {
-	if !m.isAdmin() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	users, err := m.users.ListUsers()
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	m.addOutput("USERNAME              ROLE       STATUS")
-	for _, u := range users {
-		m.addOutput(fmt.Sprintf("%-21s %-10s %s", u.Username, u.Role, u.Status))
-	}
-}
-
-func (m *sessionModel) userAdmin(args []string) {
-	if !m.isAdmin() {
-		m.fail(service.ErrPermissionDenied)
-		return
-	}
-	if len(args) != 2 && len(args) != 3 {
-		m.addOutput("Usage: user role <username> <role> | user suspend|activate <username>")
-		return
-	}
-	var err error
-	switch args[0] {
-	case "role":
-		if len(args) != 3 {
-			m.addOutput("Usage: user role <username> <member|moderator|admin>")
-			return
-		}
-		err = m.users.SetUserRole(args[1], args[2])
-	case "suspend":
-		if len(args) != 2 {
-			m.addOutput("Usage: user suspend <username>")
-			return
-		}
-		err = m.users.SetUserStatus(args[1], service.StatusSuspended)
-	case "activate":
-		if len(args) != 2 {
-			m.addOutput("Usage: user activate <username>")
-			return
-		}
-		err = m.users.SetUserStatus(args[1], service.StatusActive)
-	default:
-		m.addOutput("Unknown user subcommand.")
-		return
-	}
-	if err != nil {
-		m.fail(err)
-	} else {
-		m.addOutput("User updated.")
-	}
-}
 
 func (m *sessionModel) isModerator() bool {
 	return m.user.Role == service.RoleModerator || m.user.Role == service.RoleAdmin
