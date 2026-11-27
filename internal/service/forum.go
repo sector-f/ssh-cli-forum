@@ -67,10 +67,7 @@ type Thread struct {
 	Title          string
 	Author         User
 	Body           string
-	IsPinned       bool
-	Status         string
 	CreatedAt      time.Time
-	UpdatedAt      time.Time
 	LastActivityAt time.Time
 }
 
