@@ -440,115 +440,147 @@ func (m *sessionModel) fail(err error) {
 
 func (m *sessionModel) execute(line string) (bool, tea.Cmd) {
 	args, err := splitCommand(line)
-	if err != nil { m.fail(err); return false, nil }
-	if len(args) == 0 { return false, nil }
-
-	switch strings.ToLower(args[0]) {
-	case "help", "?":
-		m.help(args[1:])
-	case "pwd":
-		m.addOutput(m.cwd)
-	case "chat":
-		return false, m.enterChat()
-	case "ls":
-		m.listLocation(args[1:])
-	case "cd":
-		m.changeDirectory(args[1:])
-	case "whoami":
-		m.addOutput(fmt.Sprintf("%s (role: %s, status: %s)", m.user.Username, m.user.Role, m.user.Status))
-	case "profile":
-		m.showProfile(args[1:])
-	case "recent":
-		m.showRecent()
-	case "topics":
-		m.listTopics(args[1:])
-	case "show":
-		m.showCurrent(args[1:])
-	case "new":
-		m.startNewTopic()
-	case "reply":
-		m.startReply()
-	case "edit-topic":
-		m.startEditTopic(args[1:])
-	case "edit-reply":
-		m.startEditReply(args[1:])
-	case "delete-topic":
-		m.deleteOwnTopic(args[1:])
-	case "delete-reply":
-		m.deleteOwnReply(args[1:])
-	case "lock", "unlock", "pin", "unpin", "hide-thread", "restore-thread", "delete-thread":
-		m.moderateThread(args)
-	case "modlog":
-		m.showModlog(args[1:])
-	case "board":
-		m.boardAdmin(args[1:])
-	case "invite":
-		m.inviteAdmin(args[1:])
-	case "users":
-		m.listUsers()
-	case "user":
-		m.userAdmin(args[1:])
-	case "exit", "quit":
-		m.addOutput("Disconnecting.")
-		return true, nil
-	default:
-		m.addOutput("Unknown command: " + args[0] + ". Type 'help' for commands.")
+	if err != nil {
+		m.fail(err)
+		return false, nil
 	}
-	return false, nil
+	if len(args) == 0 {
+		return false, nil
+	}
+
+	cmd, ok := lookupCommand(args[0])
+	if !ok {
+		m.addOutput("Unknown command: " + args[0] + ". Type 'help' for commands.")
+		return false, nil
+	}
+
+	cmdArgs := args[1:]
+	requiredPermission := cmd.Permission
+	if len(cmd.Subcommands) > 0 {
+		if len(cmdArgs) == 0 {
+			if !m.hasPermission(requiredPermission) {
+				m.fail(service.ErrPermissionDenied)
+				return false, nil
+			}
+			m.addOutput("Usage: " + cmd.Name + " <subcommand>. Type 'help " + cmd.Name + "' for details.")
+			return false, nil
+		}
+
+		subcommand, found := lookupSubcommand(cmd, cmdArgs[0])
+		if !found {
+			m.addOutput("Unknown " + cmd.Name + " subcommand: " + cmdArgs[0] + ". Type 'help " + cmd.Name + "' for commands.")
+			return false, nil
+		}
+		requiredPermission = effectivePermission(cmd, subcommand)
+		cmd = subcommand
+		cmdArgs = cmdArgs[1:]
+	}
+
+	if !m.hasPermission(requiredPermission) {
+		m.fail(service.ErrPermissionDenied)
+		return false, nil
+	}
+	if cmd.Handler == nil {
+		m.addOutput("Command is not available.")
+		return false, nil
+	}
+	return cmd.Handler(m, cmdArgs)
 }
 
 func (m *sessionModel) help(args []string) {
-	if len(args) > 0 {
-		m.addOutput("Help for '" + args[0] + "' is not available yet.")
+	if len(args) > 2 {
+		m.addOutput("Usage: help [command [subcommand]]")
 		return
 	}
-	m.addOutput(`Navigation:
-  ls [path]             List boards or topics
-  cd <path>             Change location
-  cd ..                 Go to parent location
-  pwd                   Show current location
-  recent                Show recently active topics
-  topics [--page N]     List topics in the current board
-  show [--page N]       Display the current topic
-  whoami                Show your account and role
-  profile [username]    Display a profile
-  chat                  Enter the global chat
-  help                  Show this help
-  exit                  Disconnect
 
-Posting (run from a board or topic):
-  new                   Create a topic in the current board
-  reply                 Reply to the current topic
-  edit-topic <id>       Edit a topic you authored
-  edit-reply <id>       Edit a reply you authored
-  delete-topic <id>     Delete your topic
-  delete-reply <id>     Delete your reply
+	if len(args) == 0 {
+		for _, group := range commandGroupOrder {
+			var entries []string
+			for _, cmd := range commandRegistry {
+				if cmd.Group != group || !m.hasPermission(cmd.Permission) {
+					continue
+				}
+				if len(cmd.Subcommands) > 0 {
+					for _, subcommand := range cmd.Subcommands {
+						if !m.hasPermission(effectivePermission(cmd, subcommand)) {
+							continue
+						}
+						entries = append(entries, fmt.Sprintf("  %-38s %s", commandUsage(subcommand, cmd.Name), subcommand.Description))
+					}
+					continue
+				}
+				entries = append(entries, fmt.Sprintf("  %-38s %s", commandUsage(cmd, ""), cmd.Description))
+			}
+			if len(entries) == 0 {
+				continue
+			}
+			m.addOutput(group + ":")
+			for _, entry := range entries {
+				m.addOutput(entry)
+			}
+			m.addOutput("")
+		}
+		m.addOutput("Use 'help <command>' for command details.")
+		return
+	}
 
-Moderator commands:
-  lock <id> [reason]          Lock a topic
-  unlock <id> [reason]        Reopen a topic
-  pin <id> [reason]           Pin a topic
-  unpin <id> [reason]         Unpin a topic
-  hide-thread <id> [reason]   Hide a topic
-  restore-thread <id> [reason] Restore a topic
-  delete-thread <id> [reason] Delete a topic
-  delete-reply <id> [reason]  Delete any reply
-  modlog                      View moderation history
+	cmd, ok := lookupCommand(args[0])
+	if !ok {
+		m.addOutput("No help available for '" + args[0] + "'.")
+		return
+	}
+	if !m.hasPermission(cmd.Permission) {
+		m.fail(service.ErrPermissionDenied)
+		return
+	}
 
-Administrator commands:
-  board create <slug> "Name" "Description"
-  board update <slug> "Name" "Description"
-  board archive <slug>
-  board restore <slug>
-  invite create [duration] [--admin]
-  invite list
-  invite revoke <code>
-  users
-  user role <username> <member|moderator|admin>
-  user suspend <username>
-  user activate <username>`)
+	if len(args) == 2 {
+		subcommand, found := lookupSubcommand(cmd, args[1])
+		if !found {
+			m.addOutput("No help available for '" + cmd.Name + " " + args[1] + "'.")
+			return
+		}
+		if !m.hasPermission(effectivePermission(cmd, subcommand)) {
+			m.fail(service.ErrPermissionDenied)
+			return
+		}
+		subcommand.Permission = effectivePermission(cmd, subcommand)
+		m.writeCommandHelp(subcommand, cmd.Name)
+		return
+	}
+
+	if len(cmd.Subcommands) > 0 {
+		m.addOutput(cmd.Name + " — " + cmd.Description)
+		m.addOutput("Usage: " + cmd.Name + " <subcommand>")
+		if cmd.Permission != permissionMember {
+			m.addOutput("Permission: " + commandPermissionName(cmd.Permission))
+		}
+		m.addOutput("Subcommands:")
+		for _, subcommand := range cmd.Subcommands {
+			if !m.hasPermission(effectivePermission(cmd, subcommand)) {
+				continue
+			}
+			m.addOutput(fmt.Sprintf("  %-36s %s", commandUsage(subcommand, cmd.Name), subcommand.Description))
+		}
+		return
+	}
+
+	m.writeCommandHelp(cmd, "")
 }
 
+func (m *sessionModel) writeCommandHelp(cmd command, prefix string) {
+	m.addOutput("Usage: " + commandUsage(cmd, prefix))
+	m.addOutput(cmd.Description)
+	if len(cmd.Aliases) > 0 {
+		m.addOutput("Aliases: " + strings.Join(cmd.Aliases, ", "))
+	}
+	if cmd.Permission != permissionMember {
+		m.addOutput("Permission: " + commandPermissionName(cmd.Permission))
+	}
+	for _, arg := range cmd.Arguments {
+		m.addOutput(fmt.Sprintf("  %s: %s", arg.Name, arg.Description))
+	}
+}
 func (m *sessionModel) listLocation(args []string) {
 	location := m.cwd
 	if len(args) > 1 { m.addOutput("Usage: ls [path]"); return }

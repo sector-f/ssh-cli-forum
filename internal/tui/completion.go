@@ -60,64 +60,52 @@ func completionContext(line string, cursor int) ([]string, string, int, bool) {
 
 func (m *sessionModel) completionCandidates(before []string, prefix string) []string {
 	if len(before) == 0 {
-		candidates := []string{
-			"cd", "chat", "delete-reply", "delete-topic", "edit-reply",
-			"edit-topic", "exit", "help", "ls", "new", "profile", "pwd",
-			"quit", "recent", "reply", "show", "topics", "whoami",
-		}
-		if m.isModerator() {
-			candidates = append(candidates, "delete-thread", "hide-thread", "lock",
-				"modlog", "pin", "restore-thread", "unlock", "unpin")
-		}
-		if m.isAdmin() {
-			candidates = append(candidates, "board", "invite", "user", "users")
-		}
-		return matchingCandidates(candidates, prefix)
+		return matchingCandidates(commandNamesForUser(m), prefix)
 	}
 
-	command := strings.ToLower(before[0])
-	var candidates []string
+	cmd, ok := lookupCommand(before[0])
+	if !ok || !m.hasPermission(cmd.Permission) {
+		return nil
+	}
 
-	switch command {
-	case "cd", "ls":
-		if len(before) == 1 {
-			candidates = m.locationCandidates(prefix)
+	precedingArgs := before[1:]
+	if len(cmd.Subcommands) > 0 {
+		if len(precedingArgs) == 0 {
+			var names []string
+			for _, subcommand := range cmd.Subcommands {
+				if m.hasPermission(effectivePermission(cmd, subcommand)) {
+					names = append(names, subcommand.Name)
+				}
+			}
+			return matchingCandidates(names, prefix)
 		}
-	case "board":
-		if len(before) == 1 {
-			candidates = []string{"archive", "create", "list", "restore", "update"}
-		} else if len(before) == 2 && (before[1] == "archive" || before[1] == "restore" || before[1] == "update") {
-			candidates = m.boardSlugs()
+
+		subcommand, found := lookupSubcommand(cmd, precedingArgs[0])
+		if !found || !m.hasPermission(effectivePermission(cmd, subcommand)) {
+			return nil
 		}
-	case "invite":
-		if len(before) == 1 {
-			candidates = []string{"create", "list", "revoke"}
-		} else if len(before) == 2 && before[1] == "revoke" {
-			candidates = m.inviteCodes()
-		} else if len(before) == 2 && before[1] == "create" {
-			candidates = []string{"--admin"}
-		}
-	case "user":
-		if len(before) == 1 {
-			candidates = []string{"activate", "role", "suspend"}
-		} else if len(before) == 2 && (before[1] == "role" || before[1] == "suspend" || before[1] == "activate") {
-			candidates = m.usernames()
-		} else if len(before) == 3 && before[1] == "role" {
-			candidates = []string{"admin", "member", "moderator"}
-		}
-	case "profile":
-		if len(before) == 1 {
-			candidates = m.usernames()
-		}
-	case "delete-topic", "edit-topic", "lock", "unlock", "pin", "unpin",
-		"hide-thread", "restore-thread", "delete-thread", "show":
-		if len(before) == 1 {
-			candidates = m.topicIDs()
-		}
-	case "topics":
-		if len(before) == 1 {
-			candidates = []string{"--page"}
-		}
+		cmd = subcommand
+		precedingArgs = precedingArgs[1:]
+	}
+
+	argumentIndex := len(precedingArgs)
+	if argumentIndex >= len(cmd.Arguments) {
+		return nil
+	}
+
+	arg := cmd.Arguments[argumentIndex]
+	candidates := append([]string(nil), arg.Candidates...)
+	switch arg.Completion {
+	case completionLocations:
+		candidates = append(candidates, m.locationCandidates(prefix)...)
+	case completionBoardSlugs:
+		candidates = append(candidates, m.boardSlugs()...)
+	case completionUsernames:
+		candidates = append(candidates, m.usernames()...)
+	case completionInviteCodes:
+		candidates = append(candidates, m.inviteCodes()...)
+	case completionTopicIDs:
+		candidates = append(candidates, m.topicIDs()...)
 	}
 	return matchingCandidates(candidates, prefix)
 }
