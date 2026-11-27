@@ -4,184 +4,153 @@ import (
 	"database/sql"
 	"errors"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/ssh"
 	"github.com/sector-f/ssh-cli-forum/forum"
-	"go.uber.org/zap"
 )
 
 var (
 	minUsernameLength = 3
 	maxUsernameLength = 20
-	validUsername     = regexp.MustCompile("^[A-Za-z0-9-_]*$")
+	validUsername = regexp.MustCompile("^[A-Za-z0-9_-]+$")
 )
 
 func (s *Service) CreateUser(username string, pubKey ssh.PublicKey, inviteCode string) error {
-	err := isValidUsername(username)
-	if err != nil {
-		return err
-	}
-
+	if err := isValidUsername(username); err != nil { return err }
+	if pubKey == nil { return forum.ErrUsernameInvalid }
 	tx, err := s.db.Begin()
-	if err != nil {
-		s.logger.Error("Error starting transaction", zap.Error(err))
-		return forum.ErrUnknown
-	}
+	if err != nil { return err }
 	defer tx.Rollback()
 
-	var (
-		dbUser   string
-		dbInvite Invite
-		isAdmin  bool
-	)
+	var expires time.Time
+	var isAdmin bool
+	var revoked sql.NullString
+	err = tx.QueryRow("SELECT expires_at, is_admin, revoked_at FROM invites WHERE code = ?", inviteCode).Scan(&expires, &isAdmin, &revoked)
+	if errors.Is(err, sql.ErrNoRows) { return forum.ErrInviteInvalid }
+	if err != nil { return err }
+	if revoked.Valid { return forum.ErrInviteRevoked }
+	if time.Now().After(expires) { return forum.ErrInviteExpired }
 
-	// Verify that invite code exists in database
-	row := tx.QueryRow("SELECT code, created_at, expires_at, is_admin FROM invites WHERE code = ?", inviteCode)
-	err = row.Scan(&dbInvite.Code, &dbInvite.CreatedAt, &dbInvite.ExpiresAt, &isAdmin)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		return forum.ErrInviteInvalid
-	case err != nil:
-		s.logger.Error("Error checking invite code", zap.Error(err))
-		return forum.ErrUnknown
-	}
-
-	// Verify that invite code has not expired
-	if time.Now().After(dbInvite.ExpiresAt) {
-		return forum.ErrInviteExpired
-	}
-
-	// Verify that invite code hasn't been used
-	row = tx.QueryRow("SELECT username FROM users WHERE invite_code = ?", inviteCode)
-	err = row.Scan(&dbUser)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		// Invite code hasn't been used, continue
-	case err != nil:
-		s.logger.Error("Error checking invite code usage", zap.Error(err))
-		return forum.ErrUnknown
-	}
-
-	// Verify that username isn't taken
-	row = tx.QueryRow("SELECT username FROM users WHERE username = ?", username)
-	err = row.Scan(&dbUser)
-	if !errors.Is(err, sql.ErrNoRows) {
-		return forum.ErrUserExists
-	}
-
-	// Create the user and associate them with the invite code
-	_, err = tx.Exec(`
-		INSERT INTO users (username, pubkey, invite_code, is_admin)
-		VALUES (?, ?, ?, ?)
-	`, username, pubKey.Marshal(), inviteCode, isAdmin)
-
+	var used int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE invite_code = ?", inviteCode).Scan(&used); err != nil { return err }
+	if used > 0 { return forum.ErrInviteUsed }
+	_, err = tx.Exec(`INSERT INTO users (username, pubkey, invite_code, is_admin, role, status, created_at)
+		VALUES (?, ?, ?, ?, ?, 'active', ?)`, username, pubKey.Marshal(), inviteCode, isAdmin, roleForAdmin(isAdmin), nowText())
 	if err != nil {
-		s.logger.Error("Error creating user", zap.Error(err))
-		return forum.ErrUnknown
+		if strings.Contains(strings.ToLower(err.Error()), "unique") { return forum.ErrUserExists }
+		return err
 	}
+	return tx.Commit()
+}
 
-	err = tx.Commit()
-	if err != nil {
-		s.logger.Error("Error committing transaction", zap.Error(err))
-		return forum.ErrUnknown
+func (s *Service) BootstrapAdmin(username string, pubKey ssh.PublicKey) error {
+	if err := isValidUsername(username); err != nil { return err }
+	if pubKey == nil { return forum.ErrUsernameInvalid }
+	tx, err := s.db.Begin()
+	if err != nil { return err }
+	defer tx.Rollback()
+	var count int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin' OR is_admin = 1").Scan(&count); err != nil { return err }
+	if count > 0 { return forum.ErrAdminExists }
+	code, err := randomToken(24)
+	if err != nil { return err }
+	if _, err := tx.Exec("INSERT INTO invites (code, created_at, expires_at, is_admin) VALUES (?, ?, ?, 1)", code, nowText(), "9999-12-31T23:59:59Z"); err != nil { return err }
+	if _, err := tx.Exec(`INSERT INTO users (username, pubkey, invite_code, is_admin, role, status, created_at)
+		VALUES (?, ?, ?, 1, 'admin', 'active', ?)`, username, pubKey.Marshal(), code, nowText()); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") { return forum.ErrUserExists }
+		return err
 	}
-
-	s.logger.Info("Created user", zap.String("username", username), zap.Bool("is_admin", isAdmin))
-
-	return nil
+	return tx.Commit()
 }
 
 func (s *Service) GetUserByID(id int) (forum.User, error) {
-	row := s.db.QueryRow(`SELECT id, username, is_admin FROM users WHERE id = ?`, id)
-	var u User
-	if err := row.Scan(&u.ID, &u.Username, &u.IsAdmin); err != nil {
-		return forum.User{}, err
-	}
-
-	forumUser := forum.User{
-		ID:       u.ID,
-		Username: u.Username,
-		IsAdmin:  u.IsAdmin,
-	}
-
-	return forumUser, nil
+	return scanUser(s.db.QueryRow(userSelect+" WHERE id = ?", id))
 }
 
 func (s *Service) GetUserByUsername(username string) (forum.User, error) {
-	s.logger.Debug("Getting user by username", zap.String("username", username))
+	return scanUser(s.db.QueryRow(userSelect+" WHERE username = ? COLLATE NOCASE", username))
+}
 
-	row := s.db.QueryRow(`SELECT id, username, is_admin FROM users WHERE username = ?`, username)
-	var u User
-	if err := row.Scan(&u.ID, &u.Username, &u.IsAdmin); err != nil {
-		return forum.User{}, err
-	}
+const userSelect = `SELECT id, username, display_name, role, status, is_admin, created_at, last_seen_at FROM users`
 
-	forumUser := forum.User{
-		ID:       u.ID,
-		Username: u.Username,
-		IsAdmin:  u.IsAdmin,
-	}
-
-	return forumUser, nil
+func scanUser(row *sql.Row) (forum.User, error) {
+	var u forum.User
+	var created, last sql.NullString
+	if err := row.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Status, &u.IsAdmin, &created, &last); err != nil { return forum.User{}, err }
+	u.CreatedAt, u.LastSeenAt = parseTime(created.String), parseTime(last.String)
+	if u.Role == "" { u.Role = forum.RoleMember; if u.IsAdmin { u.Role = forum.RoleAdmin } }
+	u.IsAdmin = u.Role == forum.RoleAdmin || u.IsAdmin
+	return u, nil
 }
 
 func (s *Service) AuthenticateUser(username string, givenKey ssh.PublicKey) bool {
-	row := s.db.QueryRow(`SELECT pubkey FROM users WHERE username = ?`, username)
+	if givenKey == nil { return false }
 	var keyBytes []byte
-	if err := row.Scan(&keyBytes); err != nil {
-		return false
-	}
+	var status string
+	err := s.db.QueryRow("SELECT pubkey, status FROM users WHERE username = ? COLLATE NOCASE", username).Scan(&keyBytes, &status)
+	if err != nil || status == forum.StatusSuspended { return false }
 	dbKey, err := ssh.ParsePublicKey(keyBytes)
-	if err != nil {
-		return false
-	}
-
-	return ssh.KeysEqual(dbKey, givenKey)
+	if err != nil || !ssh.KeysEqual(dbKey, givenKey) { return false }
+	_, _ = s.db.Exec("UPDATE users SET last_seen_at = ? WHERE username = ? COLLATE NOCASE", nowText(), username)
+	return true
 }
 
 func (s *Service) ListUsers() ([]forum.User, error) {
-	rows, err := s.db.Query(`SELECT id, username, is_admin FROM users`)
-	if err != nil {
-		return nil, err
-	}
+	rows, err := s.db.Query(userSelect+" ORDER BY username COLLATE NOCASE")
+	if err != nil { return nil, err }
 	defer rows.Close()
-
 	var users []forum.User
 	for rows.Next() {
-		var u User
-		if err := rows.Scan(&u.ID, &u.Username, &u.IsAdmin); err != nil {
-			return nil, err
-		}
-
-		forumUser := forum.User{
-			ID:       u.ID,
-			Username: u.Username,
-			IsAdmin:  u.IsAdmin,
-		}
-
-		users = append(users, forumUser)
+		var u forum.User
+		var created, last sql.NullString
+		if err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.Role, &u.Status, &u.IsAdmin, &created, &last); err != nil { return nil, err }
+		u.CreatedAt, u.LastSeenAt = parseTime(created.String), parseTime(last.String)
+		if u.Role == "" { u.Role = forum.RoleMember; if u.IsAdmin { u.Role = forum.RoleAdmin } }
+		u.IsAdmin = u.Role == forum.RoleAdmin || u.IsAdmin
+		users = append(users, u)
 	}
-	return users, nil
+	return users, rows.Err()
 }
 
-// TODO: return error?
-func isValidUsername(s string) error {
-	if s == forum.SignupUsername {
-		return forum.ErrUsernameInvalid
+func (s *Service) SetUserRole(username, role string) error {
+	if role != forum.RoleMember && role != forum.RoleModerator && role != forum.RoleAdmin { return errors.New("role must be member, moderator, or admin") }
+	tx, err := s.db.Begin()
+	if err != nil { return err }
+	defer tx.Rollback()
+	var current string
+	if err := tx.QueryRow("SELECT role FROM users WHERE username = ? COLLATE NOCASE", username).Scan(&current); errors.Is(err, sql.ErrNoRows) { return forum.ErrUserNotFound } else if err != nil { return err }
+	if current == forum.RoleAdmin && role != forum.RoleAdmin {
+		var count int
+		if err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin' OR is_admin = 1").Scan(&count); err != nil { return err }
+		if count <= 1 { return errors.New("cannot demote the last administrator") }
 	}
+	if _, err := tx.Exec("UPDATE users SET role = ?, is_admin = ? WHERE username = ? COLLATE NOCASE", role, role == forum.RoleAdmin, username); err != nil { return err }
+	return tx.Commit()
+}
 
-	if len(s) < minUsernameLength {
-		return forum.ErrUsernameTooShort
+func (s *Service) SetUserStatus(username, status string) error {
+	if status != forum.StatusActive && status != forum.StatusSuspended { return errors.New("status must be active or suspended") }
+	tx, err := s.db.Begin()
+	if err != nil { return err }
+	defer tx.Rollback()
+	var role string
+	if err := tx.QueryRow("SELECT role FROM users WHERE username = ? COLLATE NOCASE", username).Scan(&role); errors.Is(err, sql.ErrNoRows) { return forum.ErrUserNotFound } else if err != nil { return err }
+	if status == forum.StatusSuspended && role == forum.RoleAdmin {
+		var activeAdmins int
+		if err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE role = 'admin' AND status = 'active'").Scan(&activeAdmins); err != nil { return err }
+		if activeAdmins <= 1 { return errors.New("cannot suspend the last active administrator") }
 	}
+	if _, err := tx.Exec("UPDATE users SET status = ? WHERE username = ? COLLATE NOCASE", status, username); err != nil { return err }
+	return tx.Commit()
+}
 
-	if len(s) > maxUsernameLength {
-		return forum.ErrUsernameTooLong
-	}
+func roleForAdmin(admin bool) string { if admin { return forum.RoleAdmin }; return forum.RoleMember }
 
-	if !validUsername.MatchString(s) {
-		return forum.ErrUsernameInvalid
-	}
-
+func isValidUsername(value string) error {
+	if value == forum.SignupUsername || !validUsername.MatchString(value) { return forum.ErrUsernameInvalid }
+	if len(value) < minUsernameLength { return forum.ErrUsernameTooShort }
+	if len(value) > maxUsernameLength { return forum.ErrUsernameTooLong }
 	return nil
 }
