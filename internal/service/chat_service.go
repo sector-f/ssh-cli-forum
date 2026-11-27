@@ -17,8 +17,8 @@ func (s *chatService) RecentMessages(ctx context.Context, channelSlug string, li
 	return s.store.RecentMessages(ctx, channelSlug, limit)
 }
 
-func (s *chatService) PostMessage(ctx context.Context, channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error) {
-	message, err := s.store.PostMessage(ctx, channelSlug, userID, kind, body)
+func (s *chatService) PostMessage(ctx context.Context, channelSlug string, userID int, body string) (ChatMessage, error) {
+	message, err := s.store.PostMessage(ctx, channelSlug, userID, body)
 	if err != nil {
 		return ChatMessage{}, err
 	}
