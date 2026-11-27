@@ -18,7 +18,7 @@ func (s *Store) RecentMessages(ctx context.Context, channelSlug string, limit in
 		limit = maxChatHistoryLimit
 	}
 
-	rows, err := s.db.QueryContext(ctx, "SELECT m.id, c.slug, u.id, u.username, m.kind, m.body, m.created_at "+
+	rows, err := s.db.QueryContext(ctx, "SELECT m.id, c.slug, u.id, u.username, m.body, m.created_at "+
 		"FROM chat_messages m JOIN chat_channels c ON c.id = m.channel_id "+
 		"JOIN users u ON u.id = m.user_id WHERE c.slug = ? ORDER BY m.id DESC LIMIT ?",
 		channelSlug, limit)
@@ -32,7 +32,7 @@ func (s *Store) RecentMessages(ctx context.Context, channelSlug string, limit in
 		var message service.ChatMessage
 		var createdAt string
 		if err := rows.Scan(&message.ID, &message.ChannelSlug, &message.UserID,
-			&message.Username, &message.Kind, &message.Text, &createdAt); err != nil {
+			&message.Username, &message.Text, &createdAt); err != nil {
 			return nil, err
 		}
 		message.Timestamp = parseTime(createdAt)
@@ -49,7 +49,7 @@ func (s *Store) RecentMessages(ctx context.Context, channelSlug string, limit in
 }
 
 // PostMessage persists a message and returns the stored representation.
-func (s *Store) PostMessage(ctx context.Context, channelSlug string, userID int, kind service.ChatMessageKind, body string) (service.ChatMessage, error) {
+func (s *Store) PostMessage(ctx context.Context, channelSlug string, userID int, body string) (service.ChatMessage, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return service.ChatMessage{}, err
@@ -66,8 +66,8 @@ func (s *Store) PostMessage(ctx context.Context, channelSlug string, userID int,
 	}
 
 	createdAt := nowText()
-	result, err := tx.ExecContext(ctx, "INSERT INTO chat_messages(channel_id, user_id, kind, body, created_at) VALUES (?, ?, ?, ?, ?)",
-		channelID, userID, string(kind), body, createdAt)
+	result, err := tx.ExecContext(ctx, "INSERT INTO chat_messages(channel_id, user_id, body, created_at) VALUES (?, ?, ?, ?)",
+		channelID, userID, body, createdAt)
 	if err != nil {
 		return service.ChatMessage{}, err
 	}
@@ -82,7 +82,7 @@ func (s *Store) PostMessage(ctx context.Context, channelSlug string, userID int,
 		"FROM chat_messages m JOIN chat_channels c ON c.id = m.channel_id "+
 		"JOIN users u ON u.id = m.user_id WHERE m.id = ?", messageID).Scan(
 		&message.ID, &message.ChannelSlug, &message.UserID,
-		&message.Username, &message.Kind, &message.Text, &storedAt)
+		&message.Username, &message.Text, &storedAt)
 	if err != nil {
 		return service.ChatMessage{}, err
 	}
