@@ -2,141 +2,40 @@ package sqlite
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "legacy.db")
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	statements := []string{
-		`CREATE TABLE invites (code TEXT PRIMARY KEY, created_at DATETIME NOT NULL, expires_at DATETIME NOT NULL, is_admin BOOLEAN NOT NULL DEFAULT 0)`,
-		`CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, pubkey BLOB NOT NULL, invite_code TEXT NOT NULL UNIQUE, is_admin BOOLEAN NOT NULL DEFAULT 0, FOREIGN KEY (invite_code) REFERENCES invites(code))`,
-		`CREATE TABLE boards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)`,
-		`CREATE TABLE threads (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, board_id INTEGER NOT NULL, author_id INTEGER NOT NULL, body TEXT NOT NULL, FOREIGN KEY (board_id) REFERENCES boards(id), FOREIGN KEY (author_id) REFERENCES users(id))`,
-		`CREATE TABLE comments (id INTEGER PRIMARY KEY AUTOINCREMENT, thread_id INTEGER NOT NULL, author_id INTEGER NOT NULL, body TEXT NOT NULL, posted_at DATETIME NOT NULL, FOREIGN KEY (thread_id) REFERENCES threads(id), FOREIGN KEY (author_id) REFERENCES users(id))`,
-	}
-	for _, stmt := range statements {
-		if _, err := db.Exec(stmt); err != nil {
-			t.Fatal(err)
-		}
-	}
-	now := time.Now().UTC()
-	if _, err := db.Exec("INSERT INTO invites(code, created_at, expires_at) VALUES('legacy-invite', ?, ?)", now, now.Add(24*time.Hour)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("INSERT INTO users(username, pubkey, invite_code) VALUES('alice', ?, 'legacy-invite')", []byte("public-key")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("INSERT INTO boards(name) VALUES('General Discussion')"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("INSERT INTO threads(title, board_id, author_id, body) VALUES('Legacy topic', 1, 1, 'Original body')"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("INSERT INTO comments(thread_id, author_id, body, posted_at) VALUES(1, 1, 'Legacy reply', ?)", now); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	store, err := Open(dbPath)
-	if err == nil { err = store.Migrate() }
+func TestGooseInitialMigration(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "initial.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 
-	board, err := store.GetBoardBySlug(context.Background(), "general-discussion")
+	if err := store.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	versions, err := store.MigrationVersions()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if board.Name != "General Discussion" || board.Status != service.BoardActive {
-		t.Fatalf("unexpected migrated board: %+v", board)
+	if len(versions) != 1 || versions[0] != 1 {
+		t.Fatalf("applied migration versions = %v, want [1]", versions)
 	}
-	thread, err := store.GetThreadByID(context.Background(), 1)
-	if err != nil {
+	if err := store.Migrate(); err != nil {
+		t.Fatalf("second migrate should be a no-op: %v", err)
+	}
+	var channels int
+	if err := store.db.QueryRow("SELECT COUNT(*) FROM chat_channels WHERE slug = 'global'").Scan(&channels); err != nil {
 		t.Fatal(err)
 	}
-	if thread.Body != "Original body" {
-		t.Fatalf("legacy topic body was not preserved: %+v", thread)
-	}
-	comments, total, err := store.ListCommentsPage(context.Background(), thread.ID, 1, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if total != 1 || len(comments) != 1 || comments[0].Body != "Legacy reply" {
-		t.Fatalf("legacy reply data was not preserved: total=%d comments=%+v", total, comments)
+	if channels != 1 {
+		t.Fatalf("global chat channel count = %d, want 1", channels)
 	}
 }
-
-func TestForumWriteOperations(t *testing.T) {
-	store, err := Open(filepath.Join(t.TempDir(), "service.db"))
-	if err == nil { err = store.Migrate() }
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-
-	if err := store.CreateBoardWithDetails(context.Background(), "general", "General", "General discussion", 0, 0); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.db.Exec("INSERT INTO invites(code, created_at, expires_at) VALUES('test-invite', ?, ?)", nowText(), "9999-12-31T23:59:59Z"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.db.Exec(`INSERT INTO users(username, pubkey, invite_code, role, status, created_at)
-		VALUES('alice', x'01', 'test-invite', 'moderator', 'active', ?)`, nowText()); err != nil {
-		t.Fatal(err)
-	}
-
-	board, err := store.GetBoardBySlug(context.Background(), "general")
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := store.CreateThreadWithBody(context.Background(), "Test topic", "Initial post", board.ID, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.CreateComment(context.Background(), id, 1, "A reply"); err != nil {
-		t.Fatal(err)
-	}
-
-	topics, total, err := store.ListThreadsPage(context.Background(), board.ID, 1, 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if total != 1 || len(topics) != 1 || topics[0].ReplyCount != 1 {
-		t.Fatalf("unexpected topic listing: total=%d topics=%+v", total, topics)
-	}
-
-	appSession := service.NewSession(1, store, store, nil)
-	if err := appSession.SetThreadStatus(context.Background(), id, 1, service.ThreadLocked, "test lock"); err != nil {
-		t.Fatal(err)
-	}
-	if err := appSession.CreateComment(context.Background(), id, 1, "A reply after locking"); !errors.Is(err, service.ErrThreadLocked) {
-		t.Fatalf("expected locked topic error, got %v", err)
-	}
-
-	if err := appSession.DeleteThread(context.Background(), id, 1, ""); err != nil {
-		t.Fatal(err)
-	}
-	if err := appSession.SetThreadStatus(context.Background(), id, 1, service.ThreadOpen, "restore"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := appSession.GetThreadByID(context.Background(), id); err != nil {
-		t.Fatalf("restored topic should be readable: %v", err)
-	}
-}
-
 
 func TestOpenDoesNotApplyMigrations(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "unmigrated.db"))
@@ -145,24 +44,63 @@ func TestOpenDoesNotApplyMigrations(t *testing.T) {
 	}
 	defer store.Close()
 
-	versions, err := store.MigrationVersions()
+	var tables int
+	err = store.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'users'").Scan(&tables)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != 0 {
-		t.Fatalf("Open applied migrations unexpectedly: %v", versions)
+	if tables != 0 {
+		t.Fatal("Open created application tables before Migrate")
+	}
+}
+
+func TestForumWriteOperations(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "forum.db"))
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := store.Migrate(); err != nil {
 		t.Fatal(err)
 	}
-	versions, err = store.MigrationVersions()
+	defer store.Close()
+
+	ctx := context.Background()
+	if err := store.CreateBoardWithDetails(ctx, "general", "General", "General discussion", 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec("INSERT INTO invites(code, created_at, expires_at) VALUES('test-invite', ?, ?)", nowText(), "9999-12-31T23:59:59Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO users(username, pubkey, invite_code, role, status, created_at)
+		VALUES('alice', x'01', 'test-invite', 'member', 'active', ?)`, nowText()); err != nil {
+		t.Fatal(err)
+	}
+
+	board, err := store.GetBoardBySlug(ctx, "general")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != len(migrations) {
-		t.Fatalf("applied migrations = %v, want %d versions", versions, len(migrations))
+	appSession := service.NewSession(1, store, store, nil)
+	threadID, err := appSession.CreateThreadWithBody(ctx, "Test topic", "Initial post", board.ID, 1)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := store.Migrate(); err != nil {
-		t.Fatalf("reapplying migrations should be a no-op: %v", err)
+	if err := appSession.CreateComment(ctx, threadID, 1, "A reply"); err != nil {
+		t.Fatal(err)
+	}
+
+	topics, total, err := store.ListThreadsPage(ctx, board.ID, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(topics) != 1 || topics[0].ReplyCount != 1 {
+		t.Fatalf("unexpected topic listing: total=%d topics=%+v", total, topics)
+	}
+
+	if err := appSession.DeleteThread(ctx, threadID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := appSession.GetThreadByID(ctx, threadID); err != service.ErrThreadNotFound {
+		t.Fatalf("deleted topic lookup error = %v, want ErrThreadNotFound", err)
 	}
 }
