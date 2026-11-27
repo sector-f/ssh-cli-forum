@@ -3,7 +3,6 @@ CREATE TABLE invites (
     code TEXT PRIMARY KEY,
     created_at DATETIME NOT NULL,
     expires_at DATETIME NOT NULL,
-    is_admin BOOLEAN NOT NULL DEFAULT 0,
     revoked_at TEXT
 );
 
@@ -39,10 +38,7 @@ CREATE TABLE threads (
     board_id INTEGER NOT NULL,
     author_id INTEGER NOT NULL,
     body TEXT NOT NULL,
-    is_pinned BOOLEAN NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'open',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_activity_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TEXT,
     FOREIGN KEY (board_id) REFERENCES boards(id),
@@ -55,21 +51,9 @@ CREATE TABLE comments (
     author_id INTEGER NOT NULL,
     body TEXT NOT NULL,
     posted_at DATETIME NOT NULL,
-    updated_at TEXT,
     deleted_at TEXT,
     FOREIGN KEY (thread_id) REFERENCES threads(id),
     FOREIGN KEY (author_id) REFERENCES users(id)
-);
-
-CREATE TABLE moderation_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    actor_id INTEGER NOT NULL,
-    action TEXT NOT NULL,
-    target_type TEXT NOT NULL,
-    target_id INTEGER NOT NULL,
-    reason TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (actor_id) REFERENCES users(id)
 );
 
 CREATE TABLE chat_channels (
@@ -104,11 +88,9 @@ CREATE TABLE chat_messages (
 CREATE UNIQUE INDEX idx_users_username_nocase ON users(lower(username));
 CREATE UNIQUE INDEX idx_boards_slug ON boards(slug);
 CREATE INDEX idx_boards_status_order ON boards(status, sort_order, name);
-CREATE INDEX idx_threads_board_activity ON threads(board_id, is_pinned DESC, last_activity_at DESC);
-CREATE INDEX idx_threads_visible ON threads(status, deleted_at);
+CREATE INDEX idx_threads_board_activity ON threads(board_id, last_activity_at DESC);
 CREATE INDEX idx_comments_thread_posted ON comments(thread_id, posted_at);
 CREATE INDEX idx_invites_expiry ON invites(expires_at);
-CREATE INDEX idx_modlog_created ON moderation_log(created_at DESC);
 CREATE INDEX idx_chat_messages_channel_id ON chat_messages(channel_id, id DESC);
 CREATE INDEX idx_chat_memberships_user_channel ON chat_channel_memberships(user_id, channel_id, left_at);
 
@@ -119,7 +101,6 @@ VALUES ('global', 'Global', 0);
 DROP TABLE chat_messages;
 DROP TABLE chat_channel_memberships;
 DROP TABLE chat_channels;
-DROP TABLE moderation_log;
 DROP TABLE comments;
 DROP TABLE threads;
 DROP TABLE boards;
