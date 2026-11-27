@@ -346,7 +346,7 @@ func (m *sessionModel) printThreadList(threads []forum.ThreadListing, page, tota
 		if len(title) > 46 { title = title[:43] + "..." }
 		marker := " "
 		if t.IsPinned { marker = "*" }
-		m.addOutput(fmt.Sprintf("%-4d%c %-46s %7d  %s", t.ID, marker, title, t.ReplyCount, relativeTime(t.LastActivityAt)))
+		m.addOutput(fmt.Sprintf("%-4d%s %-46s %7d  %s", t.ID, marker, title, t.ReplyCount, relativeTime(t.LastActivityAt)))
 	}
 	start := (page-1)*20 + 1
 	end := start + len(threads) - 1
