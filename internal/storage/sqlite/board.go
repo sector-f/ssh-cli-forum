@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -8,7 +9,7 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Store) CreateBoard(name string) error {
+func (s *Store) CreateBoard(ctx context.Context, name string) error {
 	slug := slugify(name)
 	if slug == "" {
 		return errors.New("board name must contain letters or numbers")
@@ -16,14 +17,14 @@ func (s *Store) CreateBoard(name string) error {
 	return s.CreateBoardWithDetails(slug, name, "", 0, 0)
 }
 
-func (s *Store) CreateBoardWithDetails(slug, name, description string, sortOrder, createdBy int) error {
-	_, err := s.db.Exec(`INSERT INTO boards (slug, name, description, sort_order, status, created_by, created_at, updated_at)
+func (s *Store) CreateBoardWithDetails(ctx context.Context, slug, name, description string, sortOrder, createdBy int) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO boards (slug, name, description, sort_order, status, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, 'active', NULLIF(?, 0), ?, ?)`, slug, name, description, sortOrder, createdBy, nowText(), nowText())
 	return err
 }
 
-func (s *Store) ListBoards() ([]service.BoardListing, error) {
-	rows, err := s.db.Query("SELECT id, slug, name, description, sort_order, status FROM boards ORDER BY sort_order, name COLLATE NOCASE")
+func (s *Store) ListBoards(ctx context.Context) ([]service.BoardListing, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, slug, name, description, sort_order, status FROM boards ORDER BY sort_order, name COLLATE NOCASE")
 	if err != nil {
 		return nil, err
 	}
@@ -39,20 +40,20 @@ func (s *Store) ListBoards() ([]service.BoardListing, error) {
 	return boards, rows.Err()
 }
 
-func (s *Store) GetBoardByID(id int) (service.Board, error) {
-	return s.getBoard("id", id)
+func (s *Store) GetBoardByID(ctx context.Context, id int) (service.Board, error) {
+	return s.getBoard(ctx, "id", id)
 }
 
-func (s *Store) GetBoardBySlug(slug string) (service.Board, error) {
-	return s.getBoard("slug", slug)
+func (s *Store) GetBoardBySlug(ctx context.Context, slug string) (service.Board, error) {
+	return s.getBoard(ctx, "slug", slug)
 }
 
-func (s *Store) getBoard(column string, value interface{}) (service.Board, error) {
+func (s *Store) getBoard(ctx context.Context, column string, value interface{}) (service.Board, error) {
 	if column != "id" && column != "slug" {
 		return service.Board{}, errors.New("invalid board lookup")
 	}
 	var b service.Board
-	err := s.db.QueryRow(fmt.Sprintf("SELECT id, slug, name, description, status FROM boards WHERE %s = ?", column), value).
+	err := s.db.QueryRowContext(ctx, fmt.Sprintf("SELECT id, slug, name, description, status FROM boards WHERE %s = ?", column), value).
 		Scan(&b.ID, &b.Slug, &b.Name, &b.Description, &b.Status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.Board{}, service.ErrBoardNotFound
@@ -63,8 +64,8 @@ func (s *Store) getBoard(column string, value interface{}) (service.Board, error
 	return b, nil
 }
 
-func (s *Store) UpdateBoard(slug, name, description string) error {
-	res, err := s.db.Exec("UPDATE boards SET name = ?, description = ?, updated_at = ? WHERE slug = ?", name, description, nowText(), slug)
+func (s *Store) UpdateBoard(ctx context.Context, slug, name, description string) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE boards SET name = ?, description = ?, updated_at = ? WHERE slug = ?", name, description, nowText(), slug)
 	if err != nil {
 		return err
 	}
@@ -75,8 +76,8 @@ func (s *Store) UpdateBoard(slug, name, description string) error {
 	return err
 }
 
-func (s *Store) SetBoardStatus(slug, status string) error {
-	res, err := s.db.Exec("UPDATE boards SET status = ?, updated_at = ? WHERE slug = ?", status, nowText(), slug)
+func (s *Store) SetBoardStatus(ctx context.Context, slug, status string) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE boards SET status = ?, updated_at = ? WHERE slug = ?", status, nowText(), slug)
 	if err != nil {
 		return err
 	}

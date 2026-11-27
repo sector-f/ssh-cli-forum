@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -11,13 +12,13 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Store) CreateInvite(code string, expiresAt time.Time, isAdmin bool) error {
-	_, err := s.db.Exec("INSERT INTO invites (code, created_at, expires_at, is_admin) VALUES (?, ?, ?, ?)", code, nowText(), expiresAt.UTC().Format(time.RFC3339Nano), isAdmin)
+func (s *Store) CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error {
+	_, err := s.db.ExecContext(ctx, "INSERT INTO invites (code, created_at, expires_at, is_admin) VALUES (?, ?, ?, ?)", code, nowText(), expiresAt.UTC().Format(time.RFC3339Nano), isAdmin)
 	return err
 }
 
-func (s *Store) ListInvites() ([]service.Invite, error) {
-	rows, err := s.db.Query(`SELECT i.code, i.created_at, i.expires_at, i.is_admin, COALESCE(u.username, ''),
+func (s *Store) ListInvites(ctx context.Context) ([]service.Invite, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT i.code, i.created_at, i.expires_at, i.is_admin, COALESCE(u.username, ''),
 		COALESCE(u.created_at, ''), COALESCE(i.revoked_at, '')
 		FROM invites i LEFT JOIN users u ON u.invite_code = i.code ORDER BY i.created_at DESC`)
 	if err != nil {
@@ -38,10 +39,10 @@ func (s *Store) ListInvites() ([]service.Invite, error) {
 	return invites, rows.Err()
 }
 
-func (s *Store) GetInvite(code string) (service.Invite, error) {
+func (s *Store) GetInvite(ctx context.Context, code string) (service.Invite, error) {
 	var i service.Invite
 	var created, expires, revoked sql.NullString
-	err := s.db.QueryRow("SELECT code, created_at, expires_at, is_admin, revoked_at FROM invites WHERE code = ?", code).
+	err := s.db.QueryRowContext(ctx, "SELECT code, created_at, expires_at, is_admin, revoked_at FROM invites WHERE code = ?", code).
 		Scan(&i.Code, &created, &expires, &i.IsAdmin, &revoked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.Invite{}, service.ErrInviteInvalid
@@ -51,7 +52,7 @@ func (s *Store) GetInvite(code string) (service.Invite, error) {
 	}
 	i.CreatedAt, i.ExpiresAt, i.RevokedAt = parseTime(created.String), parseTime(expires.String), parseTime(revoked.String)
 	var redeemed sql.NullString
-	err = s.db.QueryRow("SELECT username, created_at FROM users WHERE invite_code = ?", code).Scan(&i.RedeemedBy, &redeemed)
+	err = s.db.QueryRowContext(ctx, "SELECT username, created_at FROM users WHERE invite_code = ?", code).Scan(&i.RedeemedBy, &redeemed)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return service.Invite{}, fmt.Errorf("load invitation redemption: %w", err)
 	}
@@ -61,15 +62,15 @@ func (s *Store) GetInvite(code string) (service.Invite, error) {
 	return i, nil
 }
 
-func (s *Store) RevokeInvite(code string) error {
-	res, err := s.db.Exec("UPDATE invites SET revoked_at = ? WHERE code = ? AND revoked_at IS NULL", nowText(), code)
+func (s *Store) RevokeInvite(ctx context.Context, code string) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE invites SET revoked_at = ? WHERE code = ? AND revoked_at IS NULL", nowText(), code)
 	if err != nil {
 		return err
 	}
 	n, err := res.RowsAffected()
 	if err == nil && n == 0 {
 		var exists int
-		if e := s.db.QueryRow("SELECT COUNT(*) FROM invites WHERE code = ?", code).Scan(&exists); e != nil {
+		if e := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM invites WHERE code = ?", code).Scan(&exists); e != nil {
 			return e
 		}
 		if exists == 0 {

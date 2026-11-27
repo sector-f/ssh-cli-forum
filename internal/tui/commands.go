@@ -249,7 +249,7 @@ func commandRegistry() []command {
 func moderationStatusHandler(status string) commandHandler {
 	return commandCall(func(m *sessionModel, args []string) {
 		m.applyModeration(args, func(id int, reason string) error {
-			return m.boards.SetThreadStatus(id, m.user.ID, status, reason)
+			return m.boards.SetThreadStatus(m.ctx, id, m.user.ID, status, reason)
 		})
 	})
 }
@@ -257,7 +257,7 @@ func moderationStatusHandler(status string) commandHandler {
 func moderationPinHandler(pinned bool) commandHandler {
 	return commandCall(func(m *sessionModel, args []string) {
 		m.applyModeration(args, func(id int, reason string) error {
-			return m.boards.SetThreadPinned(id, m.user.ID, pinned, reason)
+			return m.boards.SetThreadPinned(m.ctx, id, m.user.ID, pinned, reason)
 		})
 	})
 }
@@ -265,7 +265,7 @@ func moderationPinHandler(pinned bool) commandHandler {
 func moderationDeleteHandler() commandHandler {
 	return commandCall(func(m *sessionModel, args []string) {
 		m.applyModeration(args, func(id int, reason string) error {
-			return m.boards.DeleteThread(id, m.user.ID, true, reason)
+			return m.boards.DeleteThread(m.ctx, id, m.user.ID, true, reason)
 		})
 	})
 }
@@ -299,7 +299,7 @@ func (m *sessionModel) hasPermission(permission commandPermission) bool {
 	// Keep command visibility and help in sync with administrative changes
 	// made while this SSH session is connected. Authorization itself is
 	// independently enforced by service.Session on every mutation.
-	if current, err := m.users.GetUserByID(m.user.ID); err == nil {
+	if current, err := m.users.GetUserByID(m.ctx, m.user.ID); err == nil {
 		m.user = current
 	}
 	switch permission {

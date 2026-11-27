@@ -28,7 +28,7 @@ func (m *sessionModel) applyModeration(args []string, action func(int, string) e
 }
 
 func (m *sessionModel) listAdminBoards() {
-	boards, err := m.boards.ListBoards()
+	boards, err := m.boards.ListBoards(m.ctx)
 	if err != nil {
 		m.fail(err)
 		return
@@ -41,7 +41,7 @@ func (m *sessionModel) createAdminBoard(args []string) {
 	if len(args) > 2 {
 		description = strings.Join(args[2:], " ")
 	}
-	if err := m.boards.CreateBoardWithDetails(args[0], args[1], description, 0, m.user.ID); err != nil {
+	if err := m.boards.CreateBoardWithDetails(m.ctx, args[0], args[1], description, 0, m.user.ID); err != nil {
 		m.fail(err)
 		return
 	}
@@ -49,7 +49,7 @@ func (m *sessionModel) createAdminBoard(args []string) {
 }
 
 func (m *sessionModel) updateAdminBoard(args []string) {
-	if err := m.boards.UpdateBoard(args[0], args[1], strings.Join(args[2:], " ")); err != nil {
+	if err := m.boards.UpdateBoard(m.ctx, args[0], args[1], strings.Join(args[2:], " ")); err != nil {
 		m.fail(err)
 		return
 	}
@@ -57,7 +57,7 @@ func (m *sessionModel) updateAdminBoard(args []string) {
 }
 
 func (m *sessionModel) setAdminBoardStatus(args []string, status string) {
-	if err := m.boards.SetBoardStatus(args[0], status); err != nil {
+	if err := m.boards.SetBoardStatus(m.ctx, args[0], status); err != nil {
 		m.fail(err)
 		return
 	}
@@ -65,7 +65,7 @@ func (m *sessionModel) setAdminBoardStatus(args []string, status string) {
 }
 
 func (m *sessionModel) listAdminInvites() {
-	invites, err := m.users.ListInvites()
+	invites, err := m.users.ListInvites(m.ctx)
 	if err != nil {
 		m.fail(err)
 		return
@@ -105,7 +105,7 @@ func (m *sessionModel) createAdminInvite(args []string) {
 	}
 	code, err := newInviteCode()
 	if err == nil {
-		err = m.users.CreateInvite(code, time.Now().Add(duration), admin)
+		err = m.users.CreateInvite(m.ctx, code, time.Now().Add(duration), admin)
 	}
 	if err != nil {
 		m.fail(err)
@@ -116,7 +116,7 @@ func (m *sessionModel) createAdminInvite(args []string) {
 }
 
 func (m *sessionModel) revokeAdminInvite(args []string) {
-	if err := m.users.RevokeInvite(args[0]); err != nil {
+	if err := m.users.RevokeInvite(m.ctx, args[0]); err != nil {
 		m.fail(err)
 		return
 	}
@@ -124,7 +124,7 @@ func (m *sessionModel) revokeAdminInvite(args []string) {
 }
 
 func (m *sessionModel) setAdminUserRole(args []string) {
-	if err := m.users.SetUserRole(args[0], args[1]); err != nil {
+	if err := m.users.SetUserRole(m.ctx, args[0], args[1]); err != nil {
 		m.fail(err)
 		return
 	}
@@ -132,7 +132,7 @@ func (m *sessionModel) setAdminUserRole(args []string) {
 }
 
 func (m *sessionModel) setAdminUserStatus(args []string, status string) {
-	if err := m.users.SetUserStatus(args[0], status); err != nil {
+	if err := m.users.SetUserStatus(m.ctx, args[0], status); err != nil {
 		m.fail(err)
 		return
 	}

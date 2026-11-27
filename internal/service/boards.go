@@ -1,6 +1,9 @@
 package service
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // BoardManager provides board-administration use cases over the persistence
 // contract. It keeps normalization and validation out of the SQLite store.
@@ -12,15 +15,15 @@ func NewBoardManager(boards BoardService) *BoardManager {
 	return &BoardManager{boards: boards}
 }
 
-func (m *BoardManager) CreateBoard(name string) error {
+func (m *BoardManager) CreateBoard(ctx context.Context, name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return ErrEmptyBoardName
 	}
-	return m.CreateBoardWithDetails(Slugify(name), name, "", 0, 0)
+	return m.CreateBoardWithDetails(ctx, Slugify(name), name, "", 0, 0)
 }
 
-func (m *BoardManager) CreateBoardWithDetails(slug, name, description string, sortOrder, createdBy int) error {
+func (m *BoardManager) CreateBoardWithDetails(ctx context.Context, slug, name, description string, sortOrder, createdBy int) error {
 	slug = Slugify(slug)
 	name = strings.TrimSpace(name)
 	if slug == "" {
@@ -29,22 +32,22 @@ func (m *BoardManager) CreateBoardWithDetails(slug, name, description string, so
 	if name == "" {
 		return ErrEmptyBoardName
 	}
-	return m.boards.CreateBoardWithDetails(slug, name, description, sortOrder, createdBy)
+	return m.boards.CreateBoardWithDetails(ctx, slug, name, description, sortOrder, createdBy)
 }
 
-func (m *BoardManager) UpdateBoard(slug, name, description string) error {
+func (m *BoardManager) UpdateBoard(ctx context.Context, slug, name, description string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return ErrEmptyBoardName
 	}
-	return m.boards.UpdateBoard(slug, name, description)
+	return m.boards.UpdateBoard(ctx, slug, name, description)
 }
 
-func (m *BoardManager) SetBoardStatus(slug, status string) error {
+func (m *BoardManager) SetBoardStatus(ctx context.Context, slug, status string) error {
 	if status != BoardActive && status != BoardReadOnly && status != BoardArchived {
 		return ErrInvalidBoardStatus
 	}
-	return m.boards.SetBoardStatus(slug, status)
+	return m.boards.SetBoardStatus(ctx, slug, status)
 }
 
 // Slugify normalizes a human-readable board identifier to a URL-safe component.

@@ -43,57 +43,57 @@ var (
 )
 
 type UserService interface {
-	CreateInvite(code string, expiresAt time.Time, isAdmin bool) error
-	ListInvites() ([]Invite, error)
-	GetInvite(code string) (Invite, error)
-	RevokeInvite(code string) error
+	CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error
+	ListInvites(ctx context.Context) ([]Invite, error)
+	GetInvite(ctx context.Context, code string) (Invite, error)
+	RevokeInvite(ctx context.Context, code string) error
 
-	CreateUser(username string, pubKey []byte, inviteCode, role string) error
-	BootstrapAdmin(username string, pubKey []byte) error
-	GetUserByID(id int) (User, error)
-	GetUserByUsername(username string) (User, error)
-	AuthenticateUser(username string, givenKey []byte) (bool, error)
-	ListUsers() ([]User, error)
-	SetUserRole(username, role string) error
-	SetUserStatus(username, status string) error
+	CreateUser(ctx context.Context, username string, pubKey []byte, inviteCode, role string) error
+	BootstrapAdmin(ctx context.Context, username string, pubKey []byte) error
+	GetUserByID(ctx context.Context, id int) (User, error)
+	GetUserByUsername(ctx context.Context, username string) (User, error)
+	AuthenticateUser(ctx context.Context, username string, givenKey []byte) (bool, error)
+	ListUsers(ctx context.Context) ([]User, error)
+	SetUserRole(ctx context.Context, username, role string) error
+	SetUserStatus(ctx context.Context, username, status string) error
 }
 
 type BoardService interface {
 	// Compatibility methods retained for callers from the original prototype.
-	CreateBoard(name string) error
-	ListBoards() ([]BoardListing, error)
-	GetBoardByID(id int) (Board, error)
-	CreateThread(title string, boardID, authorID int) error
-	ListThreads(boardID int) ([]ThreadListing, error)
-	GetThreadByID(id int) (Thread, error)
-	CreateComment(threadID, authorID int, body string) error
-	ListComments(threadID int) ([]Comment, error)
+	CreateBoard(ctx context.Context, name string) error
+	ListBoards(ctx context.Context) ([]BoardListing, error)
+	GetBoardByID(ctx context.Context, id int) (Board, error)
+	CreateThread(ctx context.Context, title string, boardID, authorID int) error
+	ListThreads(ctx context.Context, boardID int) ([]ThreadListing, error)
+	GetThreadByID(ctx context.Context, id int) (Thread, error)
+	CreateComment(ctx context.Context, threadID, authorID int, body string) error
+	ListComments(ctx context.Context, threadID int) ([]Comment, error)
 
-	CreateBoardWithDetails(slug, name, description string, sortOrder, createdBy int) error
-	GetBoardBySlug(slug string) (Board, error)
-	UpdateBoard(slug, name, description string) error
-	SetBoardStatus(slug, status string) error
+	CreateBoardWithDetails(ctx context.Context, slug, name, description string, sortOrder, createdBy int) error
+	GetBoardBySlug(ctx context.Context, slug string) (Board, error)
+	UpdateBoard(ctx context.Context, slug, name, description string) error
+	SetBoardStatus(ctx context.Context, slug, status string) error
 
-	CreateThreadWithBody(title, body string, boardID, authorID int) (int, error)
-	ListThreadsPage(boardID, page, pageSize int) ([]ThreadListing, int, error)
-	RecentThreads(limit int) ([]ThreadListing, error)
-	UpdateThread(id, actorID int, title, body string, moderator bool) error
-	DeleteThread(id, actorID int, moderator bool, reason string) error
-	SetThreadPinned(id, actorID int, pinned bool, reason string) error
-	SetThreadStatus(id, actorID int, status, reason string) error
+	CreateThreadWithBody(ctx context.Context, title, body string, boardID, authorID int) (int, error)
+	ListThreadsPage(ctx context.Context, boardID, page, pageSize int) ([]ThreadListing, int, error)
+	RecentThreads(ctx context.Context, limit int) ([]ThreadListing, error)
+	UpdateThread(ctx context.Context, id, actorID int, title, body string, moderator bool) error
+	DeleteThread(ctx context.Context, id, actorID int, moderator bool, reason string) error
+	SetThreadPinned(ctx context.Context, id, actorID int, pinned bool, reason string) error
+	SetThreadStatus(ctx context.Context, id, actorID int, status, reason string) error
 
-	ListCommentsPage(threadID, page, pageSize int) ([]Comment, int, error)
-	GetCommentByID(id int) (Comment, error)
-	UpdateComment(id, actorID int, body string, moderator bool) error
-	DeleteComment(id, actorID int, moderator bool, reason string) error
-	ListModerationLog(limit int) ([]ModerationEntry, error)
+	ListCommentsPage(ctx context.Context, threadID, page, pageSize int) ([]Comment, int, error)
+	GetCommentByID(ctx context.Context, id int) (Comment, error)
+	UpdateComment(ctx context.Context, id, actorID int, body string, moderator bool) error
+	DeleteComment(ctx context.Context, id, actorID int, moderator bool, reason string) error
+	ListModerationLog(ctx context.Context, limit int) ([]ModerationEntry, error)
 }
 
 // ChatService provides persistent channel history and independent live-event
 // subscriptions. Consumers may subscribe independently of their current view.
 type ChatStore interface {
-	RecentMessages(channelSlug string, limit int) ([]ChatMessage, error)
-	PostMessage(channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error)
+	RecentMessages(ctx context.Context, channelSlug string, limit int) ([]ChatMessage, error)
+	PostMessage(ctx context.Context, channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error)
 }
 
 type ChatService interface {

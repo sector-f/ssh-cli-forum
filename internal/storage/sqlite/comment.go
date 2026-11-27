@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -8,26 +9,26 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Store) CreateComment(threadID, authorID int, body string) error {
-	tx, err := s.db.Begin()
+func (s *Store) CreateComment(ctx context.Context, threadID, authorID int, body string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	now := nowText()
-	if _, err := tx.Exec("INSERT INTO comments (thread_id, author_id, body, posted_at) VALUES (?, ?, ?, ?)", threadID, authorID, body, now); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO comments (thread_id, author_id, body, posted_at) VALUES (?, ?, ?, ?)", threadID, authorID, body, now); err != nil {
 		return err
 	}
-	if _, err := tx.Exec("UPDATE threads SET last_activity_at = ?, updated_at = ? WHERE id = ?", now, now, threadID); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE threads SET last_activity_at = ?, updated_at = ? WHERE id = ?", now, now, threadID); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *Store) ListComments(threadID int) ([]service.Comment, error) {
+func (s *Store) ListComments(ctx context.Context, threadID int) ([]service.Comment, error) {
 	var all []service.Comment
 	for page := 1; ; page++ {
-		comments, total, err := s.ListCommentsPage(threadID, page, 100)
+		comments, total, err := s.ListCommentsPage(ctx, threadID, page, 100)
 		if err != nil {
 			return nil, err
 		}
@@ -38,7 +39,7 @@ func (s *Store) ListComments(threadID int) ([]service.Comment, error) {
 	}
 }
 
-func (s *Store) ListCommentsPage(threadID, page, pageSize int) ([]service.Comment, int, error) {
+func (s *Store) ListCommentsPage(ctx context.Context, threadID, page, pageSize int) ([]service.Comment, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -46,10 +47,10 @@ func (s *Store) ListCommentsPage(threadID, page, pageSize int) ([]service.Commen
 		pageSize = 10
 	}
 	var total int
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM comments WHERE thread_id = ? AND deleted_at IS NULL", threadID).Scan(&total); err != nil {
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM comments WHERE thread_id = ? AND deleted_at IS NULL", threadID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.db.Query(`SELECT c.id, c.thread_id, c.author_id, c.body, c.posted_at,
+	rows, err := s.db.QueryContext(ctx, `SELECT c.id, c.thread_id, c.author_id, c.body, c.posted_at,
 		u.username, u.display_name, u.role, u.status, u.created_at, u.last_seen_at
 		FROM comments c JOIN users u ON u.id = c.author_id
 		WHERE c.thread_id = ? AND c.deleted_at IS NULL
@@ -76,26 +77,26 @@ func (s *Store) ListCommentsPage(threadID, page, pageSize int) ([]service.Commen
 	return comments, total, rows.Err()
 }
 
-func (s *Store) UpdateComment(id, actorID int, body string, _ bool) error {
-	_, err = s.db.Exec("UPDATE comments SET body = ?, updated_at = ? WHERE id = ?", body, nowText(), id)
+func (s *Store) UpdateComment(ctx context.Context, id, actorID int, body string, _ bool) error {
+	_, err = s.db.ExecContext(ctx, "UPDATE comments SET body = ?, updated_at = ? WHERE id = ?", body, nowText(), id)
 	return err
 }
 
-func (s *Store) DeleteComment(id, actorID int, moderator bool, reason string) error {
-	tx, err := s.db.Begin()
+func (s *Store) DeleteComment(ctx context.Context, id, actorID int, moderator bool, reason string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	var threadID int
-	err = tx.QueryRow("SELECT thread_id FROM comments WHERE id = ? AND deleted_at IS NULL", id).Scan(&threadID)
+	err = tx.QueryRowContext(ctx, "SELECT thread_id FROM comments WHERE id = ? AND deleted_at IS NULL", id).Scan(&threadID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.ErrCommentNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec("UPDATE comments SET deleted_at = ? WHERE id = ?", nowText(), id); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE comments SET deleted_at = ? WHERE id = ?", nowText(), id); err != nil {
 		return err
 	}
 	if moderator {
@@ -103,18 +104,18 @@ func (s *Store) DeleteComment(id, actorID int, moderator bool, reason string) er
 			return err
 		}
 	}
-	if _, err := tx.Exec("UPDATE threads SET last_activity_at = ? WHERE id = ?", nowText(), threadID); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE threads SET last_activity_at = ? WHERE id = ?", nowText(), threadID); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func (s *Store) GetCommentByID(id int) (service.Comment, error) {
+func (s *Store) GetCommentByID(ctx context.Context, id int) (service.Comment, error) {
 	var c service.Comment
 	var authorID int
 	var posted, updated, created, last sql.NullString
 	var display, role, status string
-	err := s.db.QueryRow(`SELECT c.id, c.thread_id, c.author_id, c.body, c.posted_at, c.updated_at,
+	err := s.db.QueryRowContext(ctx, `SELECT c.id, c.thread_id, c.author_id, c.body, c.posted_at, c.updated_at,
 		u.username, u.display_name, u.role, u.status, u.created_at, u.last_seen_at
 		FROM comments c JOIN users u ON u.id = c.author_id
 		WHERE c.id = ? AND c.deleted_at IS NULL`, id).Scan(
@@ -132,11 +133,11 @@ func (s *Store) GetCommentByID(id int) (service.Comment, error) {
 	return c, nil
 }
 
-func (s *Store) ListModerationLog(limit int) ([]service.ModerationEntry, error) {
+func (s *Store) ListModerationLog(ctx context.Context, limit int) ([]service.ModerationEntry, error) {
 	if limit < 1 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.db.Query(`SELECT m.id, m.actor_id, u.username, m.action, m.target_type, m.target_id, m.reason, m.created_at
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.actor_id, u.username, m.action, m.target_type, m.target_id, m.reason, m.created_at
 		FROM moderation_log m JOIN users u ON u.id = m.actor_id ORDER BY m.id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -156,7 +157,7 @@ func (s *Store) ListModerationLog(limit int) ([]service.ModerationEntry, error) 
 }
 
 func addModlog(tx *sql.Tx, actorID int, action, targetType string, targetID int, reason string) error {
-	_, err := tx.Exec("INSERT INTO moderation_log (actor_id, action, target_type, target_id, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+	_, err := tx.ExecContext(ctx, "INSERT INTO moderation_log (actor_id, action, target_type, target_id, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)",
 		actorID, action, targetType, targetID, reason, time.Now().UTC().Format(time.RFC3339Nano))
 	return err
 }

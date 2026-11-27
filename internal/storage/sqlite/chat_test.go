@@ -51,7 +51,7 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 			kind = service.ChatMessageAction
 			body = "waves"
 		}
-		if _, err := session.PostMessage(service.GlobalChatChannel, userID, kind, body); err != nil {
+		if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, kind, body); err != nil {
 			t.Fatalf("post message %d: %v", i, err)
 		}
 	}
@@ -65,7 +65,7 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 		t.Fatal("subscriber did not receive persisted message")
 	}
 
-	history, err := store.RecentMessages(service.GlobalChatChannel, 100)
+	history, err := store.RecentMessages(context.Background(), service.GlobalChatChannel, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestChatMessagesPersistAndPublish(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	history, err = store.RecentMessages(service.GlobalChatChannel, 100)
+	history, err = store.RecentMessages(context.Background(), service.GlobalChatChannel, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,16 +107,16 @@ func TestChatRejectsInvalidMessagesAndUnknownChannels(t *testing.T) {
 	userID := createChatTestUser(t, store)
 	session := service.NewSession(userID, store, store, service.NewChatService(store))
 
-	if _, err := session.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, "   "); !errors.Is(err, service.ErrChatMessageEmpty) {
+	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, service.ChatMessageText, "   "); !errors.Is(err, service.ErrChatMessageEmpty) {
 		t.Fatalf("empty message error = %v", err)
 	}
-	if _, err := session.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, "line one\nline two"); !errors.Is(err, service.ErrChatMessageInvalid) {
+	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, service.ChatMessageText, "line one\nline two"); !errors.Is(err, service.ErrChatMessageInvalid) {
 		t.Fatalf("multiline message error = %v", err)
 	}
-	if _, err := session.PostMessage(service.GlobalChatChannel, userID, service.ChatMessageText, strings.Repeat("x", service.ChatMessageMaxLength+1)); !errors.Is(err, service.ErrChatMessageTooLong) {
+	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, service.ChatMessageText, strings.Repeat("x", service.ChatMessageMaxLength+1)); !errors.Is(err, service.ErrChatMessageTooLong) {
 		t.Fatalf("overlong message error = %v", err)
 	}
-	if _, err := session.PostMessage("missing-channel", userID, service.ChatMessageText, "hello"); !errors.Is(err, service.ErrChatChannelNotFound) {
+	if _, err := session.PostMessage(context.Background(), "missing-channel", userID, service.ChatMessageText, "hello"); !errors.Is(err, service.ErrChatChannelNotFound) {
 		t.Fatalf("unknown channel error = %v", err)
 	}
 }

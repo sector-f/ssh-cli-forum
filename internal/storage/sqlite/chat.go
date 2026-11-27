@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
@@ -9,7 +10,7 @@ import (
 const maxChatHistoryLimit = 1000
 
 // RecentMessages reads durable history and returns messages in chronological order.
-func (s *Store) RecentMessages(channelSlug string, limit int) ([]service.ChatMessage, error) {
+func (s *Store) RecentMessages(ctx context.Context, channelSlug string, limit int) ([]service.ChatMessage, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -17,7 +18,7 @@ func (s *Store) RecentMessages(channelSlug string, limit int) ([]service.ChatMes
 		limit = maxChatHistoryLimit
 	}
 
-	rows, err := s.db.Query("SELECT m.id, c.slug, u.id, u.username, m.kind, m.body, m.created_at "+
+	rows, err := s.db.QueryContext(ctx, "SELECT m.id, c.slug, u.id, u.username, m.kind, m.body, m.created_at "+
 		"FROM chat_messages m JOIN chat_channels c ON c.id = m.channel_id "+
 		"JOIN users u ON u.id = m.user_id WHERE c.slug = ? ORDER BY m.id DESC LIMIT ?",
 		channelSlug, limit)
@@ -48,15 +49,15 @@ func (s *Store) RecentMessages(channelSlug string, limit int) ([]service.ChatMes
 }
 
 // PostMessage persists a message and returns the stored representation.
-func (s *Store) PostMessage(channelSlug string, userID int, kind service.ChatMessageKind, body string) (service.ChatMessage, error) {
-	tx, err := s.db.Begin()
+func (s *Store) PostMessage(ctx context.Context, channelSlug string, userID int, kind service.ChatMessageKind, body string) (service.ChatMessage, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return service.ChatMessage{}, err
 	}
 	defer tx.Rollback()
 
 	var channelID int64
-	if err := tx.QueryRow("SELECT id FROM chat_channels WHERE slug = ?", channelSlug).
+	if err := tx.QueryRowContext(ctx, "SELECT id FROM chat_channels WHERE slug = ?", channelSlug).
 		Scan(&channelID); err != nil {
 		if err == sql.ErrNoRows {
 			return service.ChatMessage{}, service.ErrChatChannelNotFound
@@ -65,7 +66,7 @@ func (s *Store) PostMessage(channelSlug string, userID int, kind service.ChatMes
 	}
 
 	createdAt := nowText()
-	result, err := tx.Exec("INSERT INTO chat_messages(channel_id, user_id, kind, body, created_at) VALUES (?, ?, ?, ?, ?)",
+	result, err := tx.ExecContext(ctx, "INSERT INTO chat_messages(channel_id, user_id, kind, body, created_at) VALUES (?, ?, ?, ?, ?)",
 		channelID, userID, string(kind), body, createdAt)
 	if err != nil {
 		return service.ChatMessage{}, err
@@ -77,7 +78,7 @@ func (s *Store) PostMessage(channelSlug string, userID int, kind service.ChatMes
 
 	var message service.ChatMessage
 	var storedAt string
-	err = tx.QueryRow("SELECT m.id, c.slug, u.id, u.username, m.kind, m.body, m.created_at "+
+	err = tx.QueryRowContext(ctx, "SELECT m.id, c.slug, u.id, u.username, m.kind, m.body, m.created_at "+
 		"FROM chat_messages m JOIN chat_channels c ON c.id = m.channel_id "+
 		"JOIN users u ON u.id = m.user_id WHERE m.id = ?", messageID).Scan(
 		&message.ID, &message.ChannelSlug, &message.UserID,

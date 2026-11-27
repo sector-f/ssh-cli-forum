@@ -111,7 +111,7 @@ func (m *sessionModel) completionCandidates(before []string, prefix string) []st
 }
 
 func (m *sessionModel) locationCandidates(prefix string) []string {
-	boards, err := m.boards.ListBoards()
+	boards, err := m.boards.ListBoards(m.ctx)
 	if err != nil {
 		return nil
 	}
@@ -120,7 +120,7 @@ func (m *sessionModel) locationCandidates(prefix string) []string {
 	for _, board := range boards {
 		base := "/boards/" + board.Slug
 		absolute = append(absolute, base+"/")
-		if topics, _, err := m.boards.ListThreadsPage(board.ID, 1, 50); err == nil {
+		if topics, _, err := m.boards.ListThreadsPage(m.ctx, board.ID, 1, 50); err == nil {
 			for _, topic := range topics {
 				absolute = append(absolute, base+"/"+strconv.Itoa(topic.ID))
 			}
@@ -144,7 +144,7 @@ func (m *sessionModel) locationCandidates(prefix string) []string {
 			if board.Slug != slug {
 				continue
 			}
-			topics, _, err := m.boards.ListThreadsPage(board.ID, 1, 50)
+			topics, _, err := m.boards.ListThreadsPage(m.ctx, board.ID, 1, 50)
 			if err != nil {
 				break
 			}
@@ -157,7 +157,7 @@ func (m *sessionModel) locationCandidates(prefix string) []string {
 }
 
 func (m *sessionModel) boardSlugs() []string {
-	boards, err := m.boards.ListBoards()
+	boards, err := m.boards.ListBoards(m.ctx)
 	if err != nil {
 		return nil
 	}
@@ -169,7 +169,7 @@ func (m *sessionModel) boardSlugs() []string {
 }
 
 func (m *sessionModel) usernames() []string {
-	users, err := m.users.ListUsers()
+	users, err := m.users.ListUsers(m.ctx)
 	if err != nil {
 		return nil
 	}
@@ -181,7 +181,7 @@ func (m *sessionModel) usernames() []string {
 }
 
 func (m *sessionModel) inviteCodes() []string {
-	invites, err := m.users.ListInvites()
+	invites, err := m.users.ListInvites(m.ctx)
 	if err != nil {
 		return nil
 	}
@@ -195,7 +195,7 @@ func (m *sessionModel) inviteCodes() []string {
 }
 
 func (m *sessionModel) topicIDs() []string {
-	topics, err := m.boards.RecentThreads(100)
+	topics, err := m.boards.RecentThreads(m.ctx, 100)
 	if err != nil {
 		return nil
 	}

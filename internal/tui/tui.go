@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -34,6 +35,7 @@ const (
 
 type sessionModel struct {
 	session ssh.Session
+	ctx     context.Context
 	users   service.UserService
 	boards  service.BoardService
 	chat    service.ChatService
@@ -64,7 +66,7 @@ type sessionModel struct {
 var _ tea.Model = (*sessionModel)(nil)
 
 func NewProgram(sess ssh.Session, userService service.UserService, boardService service.BoardService, chatServices ...service.ChatService) (*tea.Program, error) {
-	user, err := userService.GetUserByUsername(sess.User())
+	user, err := userService.GetUserByUsername(sess.Context(), sess.User())
 	if err != nil {
 		return nil, fmt.Errorf("load account: %w", err)
 	}
@@ -93,7 +95,7 @@ func NewProgram(sess ssh.Session, userService service.UserService, boardService 
 		chatService = appSession
 	}
 	m := &sessionModel{
-		session: sess, users: appSession, boards: appSession, chat: chatService, user: user,
+		session: sess, ctx: sess.Context(), users: appSession, boards: appSession, chat: chatService, user: user,
 		cwd: "/", input: input, chatInput: chatInput, chatViewport: chatViewport,
 		windowWidth: 80, windowHeight: 24,
 		output: []string{
@@ -301,7 +303,7 @@ func (m *sessionModel) enterChat() tea.Cmd {
 	}
 
 	events, cancel := m.chat.Subscribe(m.session.Context(), service.GlobalChatChannel)
-	history, err := m.chat.RecentMessages(service.GlobalChatChannel, 100)
+	history, err := m.chat.RecentMessages(m.ctx, service.GlobalChatChannel, 100)
 	if err != nil {
 		cancel()
 		m.fail(err)
@@ -374,7 +376,7 @@ func (m *sessionModel) handleChatInput(line string) tea.Cmd {
 		}
 	}
 
-	if _, err := m.chat.PostMessage(service.GlobalChatChannel, m.user.ID, kind, body); err != nil {
+	if _, err := m.chat.PostMessage(m.ctx, service.GlobalChatChannel, m.user.ID, kind, body); err != nil {
 		m.chatStatus = "Error: " + err.Error()
 	} else {
 		m.chatStatus = ""
@@ -387,7 +389,7 @@ func (m *sessionModel) appendChatMessage(message service.ChatMessage) tea.Cmd {
 	if latestID > 0 && message.ID > latestID+1 && m.chat != nil {
 		generation := m.chatGeneration
 		return func() tea.Msg {
-			messages, err := m.chat.RecentMessages(service.GlobalChatChannel, 500)
+			messages, err := m.chat.RecentMessages(m.ctx, service.GlobalChatChannel, 500)
 			return chatHistoryMsg{generation: generation, messages: messages, trigger: message, err: err}
 		}
 	}
@@ -660,7 +662,7 @@ func (m *sessionModel) listLocation(args []string) {
 	case location == "/":
 		m.addOutput("boards/\nrecent\nhelp")
 	case location == "/boards":
-		boards, err := m.boards.ListBoards()
+		boards, err := m.boards.ListBoards(m.ctx)
 		if err != nil {
 			m.fail(err)
 			return
@@ -702,14 +704,14 @@ func (m *sessionModel) printBoards(boards []service.BoardListing) {
 }
 
 func (m *sessionModel) printBoardTopics(slug string, page int) {
-	b, err := m.boards.GetBoardBySlug(slug)
+	b, err := m.boards.GetBoardBySlug(m.ctx, slug)
 	if err != nil {
 		m.fail(err)
 		return
 	}
 	m.addOutput(fmt.Sprintf("%s — %s", b.Name, b.Description))
 	m.addOutput(fmt.Sprintf("Board status: %s", b.Status))
-	threads, total, err := m.boards.ListThreadsPage(b.ID, page, 20)
+	threads, total, err := m.boards.ListThreadsPage(m.ctx, b.ID, page, 20)
 	if err != nil {
 		m.fail(err)
 		return
@@ -724,12 +726,12 @@ func (m *sessionModel) listTopics(args []string) {
 		return
 	}
 	page := pageArgument(args)
-	board, err := m.boards.GetBoardBySlug(parts[0])
+	board, err := m.boards.GetBoardBySlug(m.ctx, parts[0])
 	if err != nil {
 		m.fail(err)
 		return
 	}
-	threads, total, err := m.boards.ListThreadsPage(board.ID, page, 20)
+	threads, total, err := m.boards.ListThreadsPage(m.ctx, board.ID, page, 20)
 	if err != nil {
 		m.fail(err)
 		return
@@ -763,7 +765,7 @@ func (m *sessionModel) printThreadList(threads []service.ThreadListing, page, to
 }
 
 func (m *sessionModel) showRecent() {
-	threads, err := m.boards.RecentThreads(20)
+	threads, err := m.boards.RecentThreads(m.ctx, 20)
 	if err != nil {
 		m.fail(err)
 		return
@@ -793,12 +795,12 @@ func (m *sessionModel) showCurrent(args []string) {
 	// An explicit topic ID is a navigation action too: establish its board/topic
 	// context so subsequent commands such as 'reply' work without another cd.
 	if len(args) > 0 && args[0] != "--page" {
-		thread, err := m.boards.GetThreadByID(id)
+		thread, err := m.boards.GetThreadByID(m.ctx, id)
 		if err != nil {
 			m.fail(err)
 			return
 		}
-		board, err := m.boards.GetBoardByID(thread.BoardID)
+		board, err := m.boards.GetBoardByID(m.ctx, thread.BoardID)
 		if err != nil {
 			m.fail(err)
 			return
@@ -809,7 +811,7 @@ func (m *sessionModel) showCurrent(args []string) {
 }
 
 func (m *sessionModel) displayThread(id, page int) {
-	t, err := m.boards.GetThreadByID(id)
+	t, err := m.boards.GetThreadByID(m.ctx, id)
 	if err != nil {
 		m.fail(err)
 		return
@@ -818,7 +820,7 @@ func (m *sessionModel) displayThread(id, page int) {
 		m.addOutput("Topic not found.")
 		return
 	}
-	comments, total, err := m.boards.ListCommentsPage(id, page, 10)
+	comments, total, err := m.boards.ListCommentsPage(m.ctx, id, page, 10)
 	if err != nil {
 		m.fail(err)
 		return
@@ -883,7 +885,7 @@ func (m *sessionModel) changeDirectory(args []string) {
 	case target == "/", target == "/boards", target == "/recent":
 		m.cwd = target
 		if target == "/boards" {
-			if b, err := m.boards.ListBoards(); err == nil {
+			if b, err := m.boards.ListBoards(m.ctx); err == nil {
 				m.printBoards(b)
 			}
 		}
@@ -893,7 +895,7 @@ func (m *sessionModel) changeDirectory(args []string) {
 	case strings.HasPrefix(target, "/boards/"):
 		parts := strings.Split(strings.TrimPrefix(target, "/boards/"), "/")
 		if len(parts) == 1 && parts[0] != "" {
-			b, err := m.boards.GetBoardBySlug(parts[0])
+			b, err := m.boards.GetBoardBySlug(m.ctx, parts[0])
 			if err != nil {
 				m.fail(err)
 				return
@@ -907,12 +909,12 @@ func (m *sessionModel) changeDirectory(args []string) {
 				m.addOutput("Invalid topic ID.")
 				return
 			}
-			t, err := m.boards.GetThreadByID(id)
+			t, err := m.boards.GetThreadByID(m.ctx, id)
 			if err != nil {
 				m.fail(err)
 				return
 			}
-			b, err := m.boards.GetBoardByID(t.BoardID)
+			b, err := m.boards.GetBoardByID(m.ctx, t.BoardID)
 			if err != nil {
 				m.fail(err)
 				return
@@ -940,7 +942,7 @@ func (m *sessionModel) showProfile(args []string) {
 	if len(args) == 1 {
 		username = args[0]
 	}
-	u, err := m.users.GetUserByUsername(username)
+	u, err := m.users.GetUserByUsername(m.ctx, username)
 	if err != nil {
 		m.fail(err)
 		return
@@ -960,7 +962,7 @@ func (m *sessionModel) startNewTopic() {
 		m.addOutput("'new' must be run from inside a board.")
 		return
 	}
-	board, err := m.boards.GetBoardBySlug(strings.TrimPrefix(m.cwd, "/boards/"))
+	board, err := m.boards.GetBoardBySlug(m.ctx, strings.TrimPrefix(m.cwd, "/boards/"))
 	if err != nil {
 		m.fail(err)
 		return
@@ -981,7 +983,7 @@ func (m *sessionModel) startReply() {
 		m.fail(errors.New("'reply' must be run from inside a topic"))
 		return
 	}
-	t, err := m.boards.GetThreadByID(id)
+	t, err := m.boards.GetThreadByID(m.ctx, id)
 	if err != nil {
 		m.fail(err)
 		return
@@ -1003,7 +1005,7 @@ func (m *sessionModel) startEditTopic(args []string) {
 		m.fail(errors.New("usage: edit-topic <id> (from inside a topic)"))
 		return
 	}
-	t, err := m.boards.GetThreadByID(id)
+	t, err := m.boards.GetThreadByID(m.ctx, id)
 	if err != nil {
 		m.fail(err)
 		return
@@ -1013,7 +1015,7 @@ func (m *sessionModel) startEditTopic(args []string) {
 		return
 	}
 	m.compose, m.draftThreadID, m.draftTitle = composeEditTitle, id, t.Title
-	board, boardErr := m.boards.GetBoardByID(t.BoardID)
+	board, boardErr := m.boards.GetBoardByID(m.ctx, t.BoardID)
 	if boardErr == nil {
 		m.cwd = path.Join("/boards", board.Slug, strconv.Itoa(id))
 	}
@@ -1037,7 +1039,7 @@ func (m *sessionModel) startEditReply(args []string) {
 		m.fail(errors.New("edit-reply must be run from inside a topic"))
 		return
 	}
-	comment, err := m.boards.GetCommentByID(id)
+	comment, err := m.boards.GetCommentByID(m.ctx, id)
 	if err != nil {
 		m.fail(err)
 		return
@@ -1097,7 +1099,7 @@ func (m *sessionModel) finishComposition() {
 		id, err := m.currentBoardID()
 		if err == nil {
 			var threadID int
-			threadID, err = m.boards.CreateThreadWithBody(m.draftTitle, body, id, m.user.ID)
+			threadID, err = m.boards.CreateThreadWithBody(m.ctx, m.draftTitle, body, id, m.user.ID)
 			if err == nil {
 				m.addOutput(fmt.Sprintf("Topic created: #%d", threadID))
 				m.cwd = path.Join(m.cwd, strconv.Itoa(threadID))
@@ -1106,7 +1108,7 @@ func (m *sessionModel) finishComposition() {
 		}
 		m.fail(err)
 	case composeReplyBody:
-		err := m.boards.CreateComment(m.draftThreadID, m.user.ID, body)
+		err := m.boards.CreateComment(m.ctx, m.draftThreadID, m.user.ID, body)
 		if err != nil {
 			m.fail(err)
 		} else {
@@ -1114,7 +1116,7 @@ func (m *sessionModel) finishComposition() {
 			m.displayThread(m.draftThreadID, 1)
 		}
 	case composeEditBody:
-		err := m.boards.UpdateThread(m.draftThreadID, m.user.ID, m.draftTitle, body, m.isModerator())
+		err := m.boards.UpdateThread(m.ctx, m.draftThreadID, m.user.ID, m.draftTitle, body, m.isModerator())
 		if err != nil {
 			m.fail(err)
 		} else {
@@ -1122,7 +1124,7 @@ func (m *sessionModel) finishComposition() {
 			m.displayThread(m.draftThreadID, 1)
 		}
 	case composeEditReplyBody:
-		err := m.boards.UpdateComment(m.draftReplyID, m.user.ID, body, m.isModerator())
+		err := m.boards.UpdateComment(m.ctx, m.draftReplyID, m.user.ID, body, m.isModerator())
 		if err != nil {
 			m.fail(err)
 		} else {
@@ -1152,7 +1154,7 @@ func (m *sessionModel) currentBoardID() (int, error) {
 	if strings.Contains(slug, "/") {
 		return 0, errors.New("not currently in a board")
 	}
-	board, err := m.boards.GetBoardBySlug(slug)
+	board, err := m.boards.GetBoardBySlug(m.ctx, slug)
 	return board.ID, err
 }
 
@@ -1162,7 +1164,7 @@ func (m *sessionModel) deleteOwnTopic(args []string) {
 		m.fail(err)
 		return
 	}
-	if err := m.boards.DeleteThread(id, m.user.ID, false, ""); err != nil {
+	if err := m.boards.DeleteThread(m.ctx, id, m.user.ID, false, ""); err != nil {
 		m.fail(err)
 		return
 	}
@@ -1182,7 +1184,7 @@ func (m *sessionModel) deleteOwnReply(args []string) {
 		m.addOutput("Invalid reply ID.")
 		return
 	}
-	if err := m.boards.DeleteComment(id, m.user.ID, m.isModerator(), ""); err != nil {
+	if err := m.boards.DeleteComment(m.ctx, id, m.user.ID, m.isModerator(), ""); err != nil {
 		m.fail(err)
 		return
 	}

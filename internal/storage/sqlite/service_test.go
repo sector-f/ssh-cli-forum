@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"path/filepath"
@@ -55,21 +56,21 @@ func TestLegacyDatabaseMigrationPreservesForumData(t *testing.T) {
 	}
 	defer store.Close()
 
-	board, err := store.GetBoardBySlug("general-discussion")
+	board, err := store.GetBoardBySlug(context.Background(), "general-discussion")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if board.Name != "General Discussion" || board.Status != service.BoardActive {
 		t.Fatalf("unexpected migrated board: %+v", board)
 	}
-	thread, err := store.GetThreadByID(1)
+	thread, err := store.GetThreadByID(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if thread.Body != "Original body" {
 		t.Fatalf("legacy topic body was not preserved: %+v", thread)
 	}
-	comments, total, err := store.ListCommentsPage(thread.ID, 1, 10)
+	comments, total, err := store.ListCommentsPage(context.Background(), thread.ID, 1, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +87,7 @@ func TestForumWriteOperations(t *testing.T) {
 	}
 	defer store.Close()
 
-	if err := store.CreateBoardWithDetails("general", "General", "General discussion", 0, 0); err != nil {
+	if err := store.CreateBoardWithDetails(context.Background(), "general", "General", "General discussion", 0, 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.db.Exec("INSERT INTO invites(code, created_at, expires_at) VALUES('test-invite', ?, ?)", nowText(), "9999-12-31T23:59:59Z"); err != nil {
@@ -97,19 +98,19 @@ func TestForumWriteOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	board, err := store.GetBoardBySlug("general")
+	board, err := store.GetBoardBySlug(context.Background(), "general")
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := store.CreateThreadWithBody("Test topic", "Initial post", board.ID, 1)
+	id, err := store.CreateThreadWithBody(context.Background(), "Test topic", "Initial post", board.ID, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CreateComment(id, 1, "A reply"); err != nil {
+	if err := store.CreateComment(context.Background(), id, 1, "A reply"); err != nil {
 		t.Fatal(err)
 	}
 
-	topics, total, err := store.ListThreadsPage(board.ID, 1, 20)
+	topics, total, err := store.ListThreadsPage(context.Background(), board.ID, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,20 +119,20 @@ func TestForumWriteOperations(t *testing.T) {
 	}
 
 	appSession := service.NewSession(1, store, store, nil)
-	if err := appSession.SetThreadStatus(id, 1, service.ThreadLocked, "test lock"); err != nil {
+	if err := appSession.SetThreadStatus(context.Background(), id, 1, service.ThreadLocked, "test lock"); err != nil {
 		t.Fatal(err)
 	}
-	if err := appSession.CreateComment(id, 1, "A reply after locking"); !errors.Is(err, service.ErrThreadLocked) {
+	if err := appSession.CreateComment(context.Background(), id, 1, "A reply after locking"); !errors.Is(err, service.ErrThreadLocked) {
 		t.Fatalf("expected locked topic error, got %v", err)
 	}
 
-	if err := appSession.DeleteThread(id, 1, false, ""); err != nil {
+	if err := appSession.DeleteThread(context.Background(), id, 1, false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := appSession.SetThreadStatus(id, 1, service.ThreadOpen, "restore"); err != nil {
+	if err := appSession.SetThreadStatus(context.Background(), id, 1, service.ThreadOpen, "restore"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := appSession.GetThreadByID(id); err != nil {
+	if _, err := appSession.GetThreadByID(context.Background(), id); err != nil {
 		t.Fatalf("restored topic should be readable: %v", err)
 	}
 }

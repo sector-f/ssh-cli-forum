@@ -13,12 +13,12 @@ func NewChatService(store ChatStore) ChatService {
 	return &chatService{store: store, hub: NewChatHub()}
 }
 
-func (s *chatService) RecentMessages(channelSlug string, limit int) ([]ChatMessage, error) {
-	return s.store.RecentMessages(channelSlug, limit)
+func (s *chatService) RecentMessages(ctx context.Context, channelSlug string, limit int) ([]ChatMessage, error) {
+	return s.store.RecentMessages(ctx, channelSlug, limit)
 }
 
-func (s *chatService) PostMessage(channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error) {
-	message, err := s.store.PostMessage(channelSlug, userID, kind, body)
+func (s *chatService) PostMessage(ctx context.Context, channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error) {
+	message, err := s.store.PostMessage(ctx, channelSlug, userID, kind, body)
 	if err != nil {
 		return ChatMessage{}, err
 	}

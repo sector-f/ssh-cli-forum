@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"bytes"
 	"database/sql"
 	"errors"
@@ -10,22 +11,22 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Store) CreateUser(username string, pubKey []byte, inviteCode, role string) error {
+func (s *Store) CreateUser(ctx context.Context, username string, pubKey []byte, inviteCode, role string) error {
 	if len(pubKey) == 0 {
 		return fmt.Errorf("public key is required")
 	}
-	_, err := s.db.Exec(`INSERT INTO users (username, pubkey, invite_code, role, status, created_at)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO users (username, pubkey, invite_code, role, status, created_at)
 		VALUES (?, ?, ?, ?, 'active', ?)`,
 		username, pubKey, inviteCode, role, nowText())
 	if err != nil && isUniqueConstraint(err) {
 		var exists int
-		if lookupErr := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE username = ? COLLATE NOCASE)", username).Scan(&exists); lookupErr != nil {
+		if lookupErr := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE username = ? COLLATE NOCASE)", username).Scan(&exists); lookupErr != nil {
 			return fmt.Errorf("check conflicting username: %w", lookupErr)
 		}
 		if exists != 0 {
 			return service.ErrUserExists
 		}
-		if lookupErr := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE invite_code = ?)", inviteCode).Scan(&exists); lookupErr != nil {
+		if lookupErr := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE invite_code = ?)", inviteCode).Scan(&exists); lookupErr != nil {
 			return fmt.Errorf("check redeemed invitation: %w", lookupErr)
 		}
 		if exists != 0 {
@@ -35,11 +36,11 @@ func (s *Store) CreateUser(username string, pubKey []byte, inviteCode, role stri
 	return err
 }
 
-func (s *Store) BootstrapAdmin(username string, pubKey []byte) error {
+func (s *Store) BootstrapAdmin(ctx context.Context, username string, pubKey []byte) error {
 	if len(pubKey) == 0 {
 		return fmt.Errorf("public key is required")
 	}
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -48,14 +49,14 @@ func (s *Store) BootstrapAdmin(username string, pubKey []byte) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec("INSERT INTO invites (code, created_at, expires_at, is_admin) VALUES (?, ?, ?, 1)", code, nowText(), "9999-12-31T23:59:59Z"); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO invites (code, created_at, expires_at, is_admin) VALUES (?, ?, ?, 1)", code, nowText(), "9999-12-31T23:59:59Z"); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`INSERT INTO users (username, pubkey, invite_code, role, status, created_at)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO users (username, pubkey, invite_code, role, status, created_at)
 		VALUES (?, ?, ?, 'admin', 'active', ?)`, username, pubKey, code, nowText()); err != nil {
 		if isUniqueConstraint(err) {
 			var exists int
-			if lookupErr := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE username = ? COLLATE NOCASE)", username).Scan(&exists); lookupErr != nil {
+			if lookupErr := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE username = ? COLLATE NOCASE)", username).Scan(&exists); lookupErr != nil {
 				return fmt.Errorf("check conflicting username: %w", lookupErr)
 			}
 			if exists != 0 {
@@ -67,12 +68,12 @@ func (s *Store) BootstrapAdmin(username string, pubKey []byte) error {
 	return tx.Commit()
 }
 
-func (s *Store) GetUserByID(id int) (service.User, error) {
-	return scanUser(s.db.QueryRow(userSelect+" WHERE id = ?", id))
+func (s *Store) GetUserByID(ctx context.Context, id int) (service.User, error) {
+	return scanUser(s.db.QueryRowContext(ctx, userSelect+" WHERE id = ?", id))
 }
 
-func (s *Store) GetUserByUsername(username string) (service.User, error) {
-	return scanUser(s.db.QueryRow(userSelect+" WHERE username = ? COLLATE NOCASE", username))
+func (s *Store) GetUserByUsername(ctx context.Context, username string) (service.User, error) {
+	return scanUser(s.db.QueryRowContext(ctx, userSelect+" WHERE username = ? COLLATE NOCASE", username))
 }
 
 const userSelect = `SELECT id, username, display_name, role, status, created_at, last_seen_at FROM users`
@@ -90,13 +91,13 @@ func scanUser(row *sql.Row) (service.User, error) {
 	return u, nil
 }
 
-func (s *Store) AuthenticateUser(username string, givenKey []byte) (bool, error) {
+func (s *Store) AuthenticateUser(ctx context.Context, username string, givenKey []byte) (bool, error) {
 	if len(givenKey) == 0 {
 		return false, nil
 	}
 	var keyBytes []byte
 	var status string
-	err := s.db.QueryRow("SELECT pubkey, status FROM users WHERE username = ? COLLATE NOCASE", username).Scan(&keyBytes, &status)
+	err := s.db.QueryRowContext(ctx, "SELECT pubkey, status FROM users WHERE username = ? COLLATE NOCASE", username).Scan(&keyBytes, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -106,14 +107,14 @@ func (s *Store) AuthenticateUser(username string, givenKey []byte) (bool, error)
 	if status == service.StatusSuspended || !bytes.Equal(keyBytes, givenKey) {
 		return false, nil
 	}
-	if _, err := s.db.Exec("UPDATE users SET last_seen_at = ? WHERE username = ? COLLATE NOCASE", nowText(), username); err != nil {
+	if _, err := s.db.ExecContext(ctx, "UPDATE users SET last_seen_at = ? WHERE username = ? COLLATE NOCASE", nowText(), username); err != nil {
 		return false, fmt.Errorf("update last-seen timestamp: %w", err)
 	}
 	return true, nil
 }
 
-func (s *Store) ListUsers() ([]service.User, error) {
-	rows, err := s.db.Query(userSelect + " ORDER BY username COLLATE NOCASE")
+func (s *Store) ListUsers(ctx context.Context) ([]service.User, error) {
+	rows, err := s.db.QueryContext(ctx, userSelect + " ORDER BY username COLLATE NOCASE")
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +132,8 @@ func (s *Store) ListUsers() ([]service.User, error) {
 	return users, rows.Err()
 }
 
-func (s *Store) SetUserRole(username, role string) error {
-	res, err := s.db.Exec("UPDATE users SET role = ? WHERE username = ? COLLATE NOCASE", role, username)
+func (s *Store) SetUserRole(ctx context.Context, username, role string) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET role = ? WHERE username = ? COLLATE NOCASE", role, username)
 	if err != nil {
 		return err
 	}
@@ -143,8 +144,8 @@ func (s *Store) SetUserRole(username, role string) error {
 	return err
 }
 
-func (s *Store) SetUserStatus(username, status string) error {
-	res, err := s.db.Exec("UPDATE users SET status = ? WHERE username = ? COLLATE NOCASE", status, username)
+func (s *Store) SetUserStatus(ctx context.Context, username, status string) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE users SET status = ? WHERE username = ? COLLATE NOCASE", status, username)
 	if err != nil {
 		return err
 	}

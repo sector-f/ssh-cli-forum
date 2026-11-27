@@ -1,19 +1,20 @@
 package sqlite
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Store) CreateThread(title string, boardID, authorID int) error {
-	_, err := s.CreateThreadWithBody(title, "", boardID, authorID)
+func (s *Store) CreateThread(ctx context.Context, title string, boardID, authorID int) error {
+	_, err := s.CreateThreadWithBody(ctx, title, "", boardID, authorID)
 	return err
 }
 
-func (s *Store) CreateThreadWithBody(title, body string, boardID, authorID int) (int, error) {
-	res, err := s.db.Exec(`INSERT INTO threads (title, board_id, author_id, body, created_at, updated_at, last_activity_at)
+func (s *Store) CreateThreadWithBody(ctx context.Context, title, body string, boardID, authorID int) (int, error) {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO threads (title, board_id, author_id, body, created_at, updated_at, last_activity_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`, title, boardID, authorID, body, nowText(), nowText(), nowText())
 	if err != nil {
 		return 0, err
@@ -49,8 +50,8 @@ func scanThreadListing(row interface{ Scan(...interface{}) error }) (service.Thr
 	return t, nil
 }
 
-func (s *Store) GetThreadByID(id int) (service.Thread, error) {
-	row := s.db.QueryRow(threadSelect+` WHERE t.id = ? AND t.deleted_at IS NULL`, id)
+func (s *Store) GetThreadByID(ctx context.Context, id int) (service.Thread, error) {
+	row := s.db.QueryRowContext(ctx, threadSelect+` WHERE t.id = ? AND t.deleted_at IS NULL`, id)
 	listing, err := scanThreadListing(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.Thread{}, service.ErrThreadNotFound
@@ -66,10 +67,10 @@ func (s *Store) GetThreadByID(id int) (service.Thread, error) {
 	}, nil
 }
 
-func (s *Store) ListThreads(boardID int) ([]service.ThreadListing, error) {
+func (s *Store) ListThreads(ctx context.Context, boardID int) ([]service.ThreadListing, error) {
 	var all []service.ThreadListing
 	for page := 1; ; page++ {
-		threads, total, err := s.ListThreadsPage(boardID, page, 100)
+		threads, total, err := s.ListThreadsPage(ctx, boardID, page, 100)
 		if err != nil {
 			return nil, err
 		}
@@ -80,7 +81,7 @@ func (s *Store) ListThreads(boardID int) ([]service.ThreadListing, error) {
 	}
 }
 
-func (s *Store) ListThreadsPage(boardID, page, pageSize int) ([]service.ThreadListing, int, error) {
+func (s *Store) ListThreadsPage(ctx context.Context, boardID, page, pageSize int) ([]service.ThreadListing, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -94,11 +95,11 @@ func (s *Store) ListThreadsPage(boardID, page, pageSize int) ([]service.ThreadLi
 		args = append(args, boardID)
 	}
 	var total int
-	if err := s.db.QueryRow("SELECT COUNT(*) FROM threads t"+where, args...).Scan(&total); err != nil {
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM threads t"+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := s.db.Query(threadSelect+where+" ORDER BY t.is_pinned DESC, t.last_activity_at DESC, t.id DESC LIMIT ? OFFSET ?", args...)
+	rows, err := s.db.QueryContext(ctx, threadSelect+where+" ORDER BY t.is_pinned DESC, t.last_activity_at DESC, t.id DESC LIMIT ? OFFSET ?", args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -114,11 +115,11 @@ func (s *Store) ListThreadsPage(boardID, page, pageSize int) ([]service.ThreadLi
 	return threads, total, rows.Err()
 }
 
-func (s *Store) RecentThreads(limit int) ([]service.ThreadListing, error) {
+func (s *Store) RecentThreads(ctx context.Context, limit int) ([]service.ThreadListing, error) {
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
-	rows, err := s.db.Query(threadSelect+` WHERE t.deleted_at IS NULL AND t.status <> 'hidden'
+	rows, err := s.db.QueryContext(ctx, threadSelect+` WHERE t.deleted_at IS NULL AND t.status <> 'hidden'
 		ORDER BY t.last_activity_at DESC, t.id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -135,18 +136,18 @@ func (s *Store) RecentThreads(limit int) ([]service.ThreadListing, error) {
 	return threads, rows.Err()
 }
 
-func (s *Store) UpdateThread(id, actorID int, title, body string, _ bool) error {
-	_, err := s.db.Exec("UPDATE threads SET title = ?, body = ?, updated_at = ? WHERE id = ?", title, body, nowText(), id)
+func (s *Store) UpdateThread(ctx context.Context, id, actorID int, title, body string, _ bool) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE threads SET title = ?, body = ?, updated_at = ? WHERE id = ?", title, body, nowText(), id)
 	return err
 }
 
-func (s *Store) DeleteThread(id, actorID int, moderator bool, reason string) error {
-	tx, err := s.db.Begin()
+func (s *Store) DeleteThread(ctx context.Context, id, actorID int, moderator bool, reason string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec("UPDATE threads SET deleted_at = ?, status = 'hidden', updated_at = ? WHERE id = ?", nowText(), nowText(), id); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE threads SET deleted_at = ?, status = 'hidden', updated_at = ? WHERE id = ?", nowText(), nowText(), id); err != nil {
 		return err
 	}
 	if moderator {
@@ -157,13 +158,13 @@ func (s *Store) DeleteThread(id, actorID int, moderator bool, reason string) err
 	return tx.Commit()
 }
 
-func (s *Store) SetThreadPinned(id, actorID int, pinned bool, reason string) error {
-	tx, err := s.db.Begin()
+func (s *Store) SetThreadPinned(ctx context.Context, id, actorID int, pinned bool, reason string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec("UPDATE threads SET is_pinned = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL", pinned, nowText(), id)
+	res, err := tx.ExecContext(ctx, "UPDATE threads SET is_pinned = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL", pinned, nowText(), id)
 	if err != nil {
 		return err
 	}
@@ -184,13 +185,13 @@ func (s *Store) SetThreadPinned(id, actorID int, pinned bool, reason string) err
 	return tx.Commit()
 }
 
-func (s *Store) SetThreadStatus(id, actorID int, status, reason string) error {
-	tx, err := s.db.Begin()
+func (s *Store) SetThreadStatus(ctx context.Context, id, actorID int, status, reason string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	res, err := tx.Exec("UPDATE threads SET status = ?, deleted_at = CASE WHEN ? = 'open' THEN NULL ELSE deleted_at END, updated_at = ? WHERE id = ? AND (deleted_at IS NULL OR ? = 'open')", status, status, nowText(), id, status)
+	res, err := tx.ExecContext(ctx, "UPDATE threads SET status = ?, deleted_at = CASE WHEN ? = 'open' THEN NULL ELSE deleted_at END, updated_at = ? WHERE id = ? AND (deleted_at IS NULL OR ? = 'open')", status, status, nowText(), id, status)
 	if err != nil {
 		return err
 	}

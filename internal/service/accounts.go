@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"regexp"
 	"time"
@@ -37,14 +38,14 @@ func ValidateUsername(username string) error {
 	return nil
 }
 
-func (s *AccountService) RegisterUser(username string, pubKey []byte, inviteCode string) error {
+func (s *AccountService) RegisterUser(ctx context.Context, username string, pubKey []byte, inviteCode string) error {
 	if err := ValidateUsername(username); err != nil {
 		return err
 	}
 	if len(pubKey) == 0 {
 		return ErrUsernameInvalid
 	}
-	invite, err := s.users.GetInvite(inviteCode)
+	invite, err := s.users.GetInvite(ctx, inviteCode)
 	if err != nil {
 		return err
 	}
@@ -61,17 +62,17 @@ func (s *AccountService) RegisterUser(username string, pubKey []byte, inviteCode
 	if invite.IsAdmin {
 		role = RoleAdmin
 	}
-	return s.users.CreateUser(username, pubKey, inviteCode, role)
+	return s.users.CreateUser(ctx, username, pubKey, inviteCode, role)
 }
 
-func (s *AccountService) BootstrapAdmin(username string, pubKey []byte) error {
+func (s *AccountService) BootstrapAdmin(ctx context.Context, username string, pubKey []byte) error {
 	if err := ValidateUsername(username); err != nil {
 		return err
 	}
 	if pubKey == nil {
 		return ErrUsernameInvalid
 	}
-	users, err := s.users.ListUsers()
+	users, err := s.users.ListUsers(ctx)
 	if err != nil {
 		return err
 	}
@@ -80,20 +81,20 @@ func (s *AccountService) BootstrapAdmin(username string, pubKey []byte) error {
 			return ErrAdminExists
 		}
 	}
-	return s.users.BootstrapAdmin(username, pubKey)
+	return s.users.BootstrapAdmin(ctx, username, pubKey)
 }
 
-func (s *AccountService) CreateInvite(code string, expiresAt time.Time, isAdmin bool) error {
+func (s *AccountService) CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error {
 	if code == "" {
 		return errors.New("invite code cannot be empty")
 	}
 	if !expiresAt.After(time.Now()) {
 		return errors.New("invite expiration must be in the future")
 	}
-	return s.users.CreateInvite(code, expiresAt, isAdmin)
+	return s.users.CreateInvite(ctx, code, expiresAt, isAdmin)
 }
 
-func (s *AccountService) SetUserRole(username, role string) error {
+func (s *AccountService) SetUserRole(ctx context.Context, username, role string) error {
 	if role != RoleMember && role != RoleModerator && role != RoleAdmin {
 		return ErrInvalidRole
 	}
@@ -116,10 +117,10 @@ func (s *AccountService) SetUserRole(username, role string) error {
 			return ErrLastAdmin
 		}
 	}
-	return s.users.SetUserRole(username, role)
+	return s.users.SetUserRole(ctx, username, role)
 }
 
-func (s *AccountService) SetUserStatus(username, status string) error {
+func (s *AccountService) SetUserStatus(ctx context.Context, username, status string) error {
 	if status != StatusActive && status != StatusSuspended {
 		return ErrInvalidStatus
 	}
@@ -142,5 +143,5 @@ func (s *AccountService) SetUserStatus(username, status string) error {
 			return ErrLastAdmin
 		}
 	}
-	return s.users.SetUserStatus(username, status)
+	return s.users.SetUserStatus(ctx, username, status)
 }
