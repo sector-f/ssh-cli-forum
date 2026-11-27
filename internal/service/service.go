@@ -88,6 +88,23 @@ type BoardService interface {
 }
 // ChatService provides persistent channel history and independent live-event
 // subscriptions. Consumers may subscribe independently of their current view.
+type UserSession interface {
+	GetUserByID(ctx context.Context, id int) (User, error)
+	GetUserByUsername(ctx context.Context, username string) (User, error)
+	ListInvites(ctx context.Context) ([]Invite, error)
+	RevokeInvite(ctx context.Context, code string) error
+	ListUsers(ctx context.Context) ([]User, error)
+	CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error
+	SetUserRole(ctx context.Context, username, role string) error
+	SetUserStatus(ctx context.Context, username, status string) error
+}
+
+// BoardSession is the application-facing forum contract. Session implements
+// its mutations with actor authorization rather than exposing the store.
+type BoardSession interface {
+	BoardService
+}
+
 type ChatStore interface {
 	RecentMessages(ctx context.Context, channelSlug string, limit int) ([]ChatMessage, error)
 	PostMessage(ctx context.Context, channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error)
