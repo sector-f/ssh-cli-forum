@@ -102,13 +102,13 @@ func TestChatRejectsInvalidMessagesAndUnknownChannels(t *testing.T) {
 	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, "   "); !errors.Is(err, service.ErrChatMessageEmpty) {
 		t.Fatalf("empty message error = %v", err)
 	}
-	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, service.ChatMessageText, "line one\nline two"); !errors.Is(err, service.ErrChatMessageInvalid) {
+	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, "line one\nline two"); !errors.Is(err, service.ErrChatMessageInvalid) {
 		t.Fatalf("multiline message error = %v", err)
 	}
-	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, service.ChatMessageText, strings.Repeat("x", service.ChatMessageMaxLength+1)); !errors.Is(err, service.ErrChatMessageTooLong) {
+	if _, err := session.PostMessage(context.Background(), service.GlobalChatChannel, userID, strings.Repeat("x", service.ChatMessageMaxLength+1)); !errors.Is(err, service.ErrChatMessageTooLong) {
 		t.Fatalf("overlong message error = %v", err)
 	}
-	if _, err := session.PostMessage(context.Background(), "missing-channel", userID, service.ChatMessageText, "hello"); !errors.Is(err, service.ErrChatChannelNotFound) {
+	if _, err := session.PostMessage(context.Background(), "missing-channel", userID, "hello"); !errors.Is(err, service.ErrChatChannelNotFound) {
 		t.Fatalf("unknown channel error = %v", err)
 	}
 }
