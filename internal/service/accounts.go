@@ -5,7 +5,6 @@ import (
 	"errors"
 	"regexp"
 	"time"
-
 )
 
 const (
@@ -124,7 +123,7 @@ func (s *AccountService) SetUserStatus(ctx context.Context, username, status str
 	if status != StatusActive && status != StatusSuspended {
 		return ErrInvalidStatus
 	}
-	target, err := s.users.GetUserByUsername(username)
+	target, err := s.users.GetUserByUsername(ctx, username)
 	if err != nil {
 		return err
 	}
