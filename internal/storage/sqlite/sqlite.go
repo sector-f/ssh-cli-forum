@@ -1,12 +1,16 @@
 package sqlite
 
 import (
-	"context"\n\t"database/sql"\n\t"embed"\n\t"io/fs"
+	"context"
+	"database/sql"
+	"embed"
+	"io/fs"
 	"fmt"
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"\n\t"github.com/pressly/goose/v3"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/pressly/goose/v3"
 )
 
 type Store struct {
