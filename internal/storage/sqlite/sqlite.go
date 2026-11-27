@@ -380,6 +380,13 @@ func hasColumn(tx *sql.Tx, table, column string) (bool, error) {
 }
 
 func (s *Store) MigrationVersions() ([]int, error) {
+	var hasTable bool
+	if err := s.db.QueryRow("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations')").Scan(&hasTable); err != nil {
+		return nil, err
+	}
+	if !hasTable {
+		return []int{}, nil
+	}
 	rows, err := s.db.Query("SELECT version FROM schema_migrations ORDER BY version")
 	if err != nil {
 		return nil, err
