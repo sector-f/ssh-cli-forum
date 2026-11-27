@@ -78,7 +78,6 @@ CREATE TABLE chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
-    kind TEXT NOT NULL DEFAULT 'text',
     body TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY (channel_id) REFERENCES chat_channels(id),
