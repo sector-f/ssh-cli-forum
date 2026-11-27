@@ -132,18 +132,6 @@ func (s *Store) ListUsers(ctx context.Context) ([]service.User, error) {
 	return users, rows.Err()
 }
 
-func (s *Store) SetUserRole(ctx context.Context, username, role string) error {
-	res, err := s.db.ExecContext(ctx, "UPDATE users SET role = ? WHERE username = ? COLLATE NOCASE", role, username)
-	if err != nil {
-		return err
-	}
-	n, err := res.RowsAffected()
-	if err == nil && n == 0 {
-		return service.ErrUserNotFound
-	}
-	return err
-}
-
 func (s *Store) SetUserStatus(ctx context.Context, username, status string) error {
 	res, err := s.db.ExecContext(ctx, "UPDATE users SET status = ? WHERE username = ? COLLATE NOCASE", status, username)
 	if err != nil {
