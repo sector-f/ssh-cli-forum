@@ -96,21 +96,3 @@ func (s *Store) Backup(destination string) error {
 
 func nowText() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
-func slugify(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	var b strings.Builder
-	dash := false
-	for _, r := range value {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			dash = false
-		case r == '-' || r == '_' || r == ' ':
-			if b.Len() > 0 && !dash {
-				b.WriteByte('-')
-				dash = true
-			}
-		}
-	}
-	return strings.Trim(b.String(), "-")
-}
