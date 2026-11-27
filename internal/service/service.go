@@ -96,7 +96,7 @@ type BoardSession interface {
 
 type ChatStore interface {
 	RecentMessages(ctx context.Context, channelSlug string, limit int) ([]ChatMessage, error)
-	PostMessage(ctx context.Context, channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error)
+	PostMessage(ctx context.Context, channelSlug string, userID int, body string) (ChatMessage, error)
 }
 
 type ChatService interface {
