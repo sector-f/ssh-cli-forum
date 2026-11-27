@@ -214,7 +214,7 @@ func (s *Session) RecentMessages(ctx context.Context, channelSlug string, limit 
 	return s.ChatService.RecentMessages(ctx, channelSlug, limit)
 }
 
-func (s *Session) PostMessage(ctx context.Context, channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error) {
+func (s *Session) PostMessage(ctx context.Context, channelSlug string, userID int, body string) (ChatMessage, error) {
 	if s.ChatService == nil {
 		return ChatMessage{}, errors.New("chat is unavailable")
 	}
@@ -234,10 +234,7 @@ func (s *Session) PostMessage(ctx context.Context, channelSlug string, userID in
 			return ChatMessage{}, ErrChatMessageInvalid
 		}
 	}
-	if kind != ChatMessageText && kind != ChatMessageAction {
-		return ChatMessage{}, ErrChatMessageInvalid
-	}
-	return s.ChatService.PostMessage(ctx, channelSlug, user.ID, kind, body)
+	return s.ChatService.PostMessage(ctx, channelSlug, user.ID, body)
 }
 
 func (s *Session) Subscribe(ctx context.Context, channelSlug string) (<-chan ChatMessage, func()) {
