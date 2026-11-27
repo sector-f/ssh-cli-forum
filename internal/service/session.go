@@ -373,3 +373,10 @@ func (s *Session) Subscribe(ctx context.Context, channelSlug string) (<-chan Cha
 	}
 	return s.ChatService.Subscribe(ctx, channelSlug)
 }
+
+// Compile-time checks keep the session facade aligned with its public contracts.
+var (
+	_ UserSession  = (*Session)(nil)
+	_ BoardSession = (*Session)(nil)
+	_ ChatService  = (*Session)(nil)
+)
