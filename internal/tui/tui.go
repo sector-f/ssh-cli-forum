@@ -179,6 +179,11 @@ func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, tea.Quit
+		case "tab":
+			if m.compose == composeNone {
+				m.completeInput()
+				return m, nil
+			}
 		case "enter":
 			line := m.input.Value()
 			m.input.Reset()
