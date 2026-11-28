@@ -23,17 +23,6 @@ type directory interface {
 	ReadDir(virtualFilesystem) ([]filesystemEntry, error)
 }
 
-type rootDirectory struct{}
-type boardsDirectory struct{}
-
-type boardObject struct {
-	board service.Board
-}
-
-type topicObject struct {
-	id int
-}
-
 // pathNode is one name in the virtual filesystem tree. The same object can be
 // wrapped by different nodes without the object carrying path or parent state.
 type pathNode struct {
@@ -66,7 +55,9 @@ type virtualFilesystem struct {
 	root  *pathNode
 }
 
-func (rootDirectory) Commands() []command  { return nil }
+type rootDirectory struct{}
+
+func (rootDirectory) Commands() []command { return nil }
 
 func (rootDirectory) Lookup(_ virtualFilesystem, name string) (filesystemObject, error) {
 	if name == "boards" {
@@ -78,6 +69,8 @@ func (rootDirectory) Lookup(_ virtualFilesystem, name string) (filesystemObject,
 func (rootDirectory) ReadDir(_ virtualFilesystem) ([]filesystemEntry, error) {
 	return []filesystemEntry{{name: "boards", object: boardsDirectory{}}}, nil
 }
+
+type boardsDirectory struct{}
 
 func (boardsDirectory) Commands() []command { return nil }
 
@@ -107,7 +100,11 @@ func (boardsDirectory) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) 
 	return entries, nil
 }
 
-func (boardObject) Commands() []command     { return boardCommands() }
+type boardObject struct {
+	board service.Board
+}
+
+func (boardObject) Commands() []command { return boardCommands() }
 
 func (l boardObject) Lookup(fs virtualFilesystem, name string) (filesystemObject, error) {
 	id, err := strconv.Atoi(name)
@@ -139,7 +136,11 @@ func (l boardObject) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) {
 	return entries, nil
 }
 
-func (topicObject) Commands() []command     { return threadCommands() }
+type topicObject struct {
+	id int
+}
+
+func (topicObject) Commands() []command { return threadCommands() }
 
 func (m *sessionModel) currentLocation() *pathNode {
 	if m.location == nil {
