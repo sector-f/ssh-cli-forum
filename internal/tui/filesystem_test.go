@@ -72,11 +72,19 @@ func TestFilesystemResolveNormalizesParentTraversalByWalkingTree(t *testing.T) {
 		id: 42,
 		parent: boardLocation{board: service.Board{ID: 7, Slug: "general"}},
 	}
-	got, err = model.filesystem().Resolve(topic, "../12")
+	got, err = model.filesystem().Resolve(topic, "../..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Path() != "/boards/general/12" {
-		t.Fatalf("Resolve(../12) = %s, want /boards/general/12", got.Path())
+	if got.Path() != "/boards" {
+		t.Fatalf("Resolve(../..) = %s, want /boards", got.Path())
+	}
+
+	got, err = model.filesystem().Resolve(topic, "../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Path() != "/" {
+		t.Fatalf("Resolve(../../..) = %s, want /", got.Path())
 	}
 }
