@@ -2,8 +2,6 @@ package tui
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"path"
@@ -19,6 +17,7 @@ import (
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/sector-f/ssh-cli-forum/internal/service"
+	"github.com/sector-f/ssh-cli-forum/internal/token"
 )
 
 type composeState int
@@ -1097,14 +1096,6 @@ func relativeTime(t time.Time) string {
 	default:
 		return t.Format("2006-01-02")
 	}
-}
-
-func newInviteCode() (string, error) {
-	buf := make([]byte, 12)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
 }
 
 func splitCommand(line string) ([]string, error) {
