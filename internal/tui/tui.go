@@ -238,6 +238,7 @@ func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input.Prompt = m.currentPrompt()
 					return m, cmd
 				}
+				m.addOutput("")
 			}
 			m.input.Prompt = m.currentPrompt()
 			return m, nil
