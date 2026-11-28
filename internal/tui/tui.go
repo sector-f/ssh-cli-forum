@@ -40,6 +40,10 @@ type sessionModel struct {
 	input  textinput.Model
 	output []string
 
+	commandHistory []string
+	historyIndex   int
+	historyDraft   string
+
 	compose       composeState
 	draftTitle    string
 	draftLines    []string
@@ -200,6 +204,16 @@ func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, tea.Quit
+		case "up":
+			if m.compose == composeNone {
+				m.previousCommand()
+				return m, nil
+			}
+		case "down":
+			if m.compose == composeNone {
+				m.nextCommand()
+				return m, nil
+			}
 		case "tab":
 			if m.compose == composeNone {
 				m.completeInput()
@@ -207,6 +221,9 @@ func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			line := m.input.Value()
+			if m.compose == composeNone {
+				m.recordCommand(line)
+			}
 			m.input.Reset()
 			if m.compose != composeNone {
 				m.handleComposition(line)
@@ -221,6 +238,7 @@ func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input.Prompt = m.currentPrompt()
 					return m, cmd
 				}
+				m.addOutput(m.prompt())
 			}
 			m.input.Prompt = m.currentPrompt()
 			return m, nil
@@ -229,6 +247,42 @@ func (m *sessionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+func (m *sessionModel) recordCommand(line string) {
+	line = strings.TrimSpace(line)
+	if line != "" && (len(m.commandHistory) == 0 || m.commandHistory[len(m.commandHistory)-1] != line) {
+		m.commandHistory = append(m.commandHistory, line)
+	}
+	m.historyIndex = len(m.commandHistory)
+	m.historyDraft = ""
+}
+
+func (m *sessionModel) previousCommand() {
+	if len(m.commandHistory) == 0 {
+		return
+	}
+	if m.historyIndex == len(m.commandHistory) {
+		m.historyDraft = m.input.Value()
+	}
+	if m.historyIndex > 0 {
+		m.historyIndex--
+		m.input.SetValue(m.commandHistory[m.historyIndex])
+		m.input.CursorEnd()
+	}
+}
+
+func (m *sessionModel) nextCommand() {
+	if m.historyIndex >= len(m.commandHistory) {
+		return
+	}
+	m.historyIndex++
+	if m.historyIndex == len(m.commandHistory) {
+		m.input.SetValue(m.historyDraft)
+	} else {
+		m.input.SetValue(m.commandHistory[m.historyIndex])
+	}
+	m.input.CursorEnd()
 }
 
 func (m *sessionModel) updateChatKey(msg tea.KeyMsg) tea.Cmd {
