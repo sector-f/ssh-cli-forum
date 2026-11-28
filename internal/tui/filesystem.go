@@ -23,6 +23,13 @@ type directory interface {
 	ReadDir(virtualFilesystem) ([]filesystemEntry, error)
 }
 
+var (
+	_ directory        = (*rootDirectory)(nil)
+	_ directory        = (*boardsDirectory)(nil)
+	_ directory        = (*boardObject)(nil)
+	_ filesystemObject = (*topicObject)(nil)
+)
+
 // pathNode is one name in the virtual filesystem tree. The same object can be
 // wrapped by different nodes without the object carrying path or parent state.
 type pathNode struct {
