@@ -44,7 +44,7 @@ func TestCommandRegistryMetadata(t *testing.T) {
 
 func TestCommandAvailabilityFollowsLocation(t *testing.T) {
 	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootLocation{}}
-	rootCommands := commandNamesForUser(member)
+	rootCommands := commandNamesForContext(member)
 	rootNames := strings.Join(rootCommands, " ")
 	for _, unavailable := range []string{"recent", "topics", "new", "reply", "delete-reply"} {
 		if contains(rootCommands, unavailable) {
@@ -59,7 +59,7 @@ func TestCommandAvailabilityFollowsLocation(t *testing.T) {
 	}
 
 	member.location = boardLocation{board: service.Board{ID: 1, Slug: "general"}}
-	boardCommandsForUser := commandNamesForUser(member)
+	boardCommandsForUser := commandNamesForContext(member)
 	boardNames := strings.Join(boardCommandsForUser, " ")
 	for _, available := range []string{"topics", "new"} {
 		if !contains(boardCommandsForUser, available) {
@@ -71,7 +71,7 @@ func TestCommandAvailabilityFollowsLocation(t *testing.T) {
 	}
 
 	member.location = threadLocation{id: 12, parent: boardLocation{board: service.Board{ID: 1, Slug: "general"}}}
-	threadCommandsForUser := commandNamesForUser(member)
+	threadCommandsForUser := commandNamesForContext(member)
 	threadNames := strings.Join(threadCommandsForUser, " ")
 	for _, available := range []string{"reply", "delete-topic", "delete-reply"} {
 		if !contains(threadCommandsForUser, available) {
@@ -94,6 +94,9 @@ func TestContextualDeleteTopicShadowsGlobalCommand(t *testing.T) {
 	threadCommand, ok := member.lookupAvailableCommand("delete-topic")
 	if !ok || requiredArguments(threadCommand) != 0 {
 		t.Fatalf("topic-local delete-topic should default to the current topic: %+v, %t", threadCommand, ok)
+	}
+	if threadCommand.Arguments[0].Completion != completionTopicIDs {
+		t.Fatal("topic-local delete-topic should offer topic ID completion")
 	}
 }
 

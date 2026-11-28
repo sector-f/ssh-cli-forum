@@ -60,7 +60,7 @@ func completionContext(line string, cursor int) ([]string, string, int, bool) {
 
 func (m *sessionModel) completionCandidates(before []string, prefix string) []string {
 	if len(before) == 0 {
-		return matchingCandidates(commandNamesForUser(m), prefix)
+		return matchingCandidates(commandNamesForContext(m), prefix)
 	}
 
 	cmd, ok := m.lookupAvailableCommand(before[0])

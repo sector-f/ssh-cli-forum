@@ -111,7 +111,7 @@ func commandRegistry() []command {
 		},
 		{
 			Name: "delete-topic", Group: "Posting", Description: "Delete a topic you authored by ID.",
-			Arguments: []commandArgument{argument("topic-id", "Topic to delete.")},
+			Arguments: []commandArgument{{Name: "topic-id", Description: "Topic to delete.", Completion: completionTopicIDs}},
 			Handler: commandCall(func(m *sessionModel, args []string) { m.deleteOwnTopic(args) }),
 		},
 		{
@@ -178,7 +178,7 @@ func threadCommands() []command {
 		},
 		{
 			Name: "delete-topic", Group: "Topic", Description: "Delete the current topic or another topic by ID.",
-			Arguments: []commandArgument{optionalArgument("topic-id", "Topic to delete; defaults to the current topic.")},
+			Arguments: []commandArgument{{Name: "topic-id", Description: "Topic to delete; defaults to the current topic.", Optional: true, Completion: completionTopicIDs}},
 			Handler: commandCall(func(m *sessionModel, args []string) { m.deleteOwnTopic(args) }),
 		},
 		{
@@ -187,21 +187,6 @@ func threadCommands() []command {
 			Handler: commandCall(func(m *sessionModel, args []string) { m.deleteOwnReply(args) }),
 		},
 	}
-}
-
-func lookupCommand(name string) (command, bool) {
-	name = strings.ToLower(name)
-	for _, candidate := range commandRegistry() {
-		if strings.EqualFold(candidate.Name, name) {
-			return candidate, true
-		}
-		for _, alias := range candidate.Aliases {
-			if strings.EqualFold(alias, name) {
-				return candidate, true
-			}
-		}
-	}
-	return command{}, false
 }
 
 func lookupSubcommand(parent command, name string) (command, bool) {
@@ -309,7 +294,7 @@ func (m *sessionModel) lookupAvailableCommand(name string) (command, bool) {
 	return command{}, false
 }
 
-func commandNamesForUser(m *sessionModel) []string {
+func commandNamesForContext(m *sessionModel) []string {
 	var names []string
 	for _, candidate := range m.availableCommands() {
 		names = append(names, candidate.Name)
