@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sector-f/ssh-cli-forum/internal/token"
 )
 
 func (m *sessionModel) listAdminBoards() {
@@ -70,7 +71,7 @@ func (m *sessionModel) createAdminInvite(args []string) {
 		m.addOutput("Invite duration must be positive.")
 		return
 	}
-	code, err := newInviteCode()
+	code, err := token.New(12)
 	if err == nil {
 		err = m.users.CreateInvite(m.ctx, code, time.Now().Add(duration))
 	}
