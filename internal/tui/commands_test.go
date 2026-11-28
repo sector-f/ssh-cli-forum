@@ -108,7 +108,7 @@ func TestHelpUsesCommandsAvailableAtCurrentLocation(t *testing.T) {
 		t.Fatalf("root help is missing global commands:\n%s", rootHelp)
 	}
 	for _, unavailable := range []string{"topics", "new", "reply", "delete-reply"} {
-		if strings.Contains(rootHelp, unavailable) {
+		if helpHasCommand(rootHelp, unavailable) {
 			t.Fatalf("root help exposes location-specific command %q:\n%s", unavailable, rootHelp)
 		}
 	}
@@ -117,7 +117,7 @@ func TestHelpUsesCommandsAvailableAtCurrentLocation(t *testing.T) {
 	member.location = boardLocation{board: service.Board{ID: 1, Slug: "general"}}
 	member.help(nil)
 	boardHelp := strings.Join(member.output, "\n")
-	if !strings.Contains(boardHelp, "new") || !strings.Contains(boardHelp, "topics") || strings.Contains(boardHelp, "reply") {
+	if !helpHasCommand(boardHelp, "new") || !helpHasCommand(boardHelp, "topics") || helpHasCommand(boardHelp, "reply") {
 		t.Fatalf("board help has incorrect commands:\n%s", boardHelp)
 	}
 
@@ -128,7 +128,7 @@ func TestHelpUsesCommandsAvailableAtCurrentLocation(t *testing.T) {
 	if !strings.Contains(threadHelp, "reply") || !strings.Contains(threadHelp, "delete-reply") || !strings.Contains(threadHelp, "delete-topic") {
 		t.Fatalf("topic help is missing topic commands:\n%s", threadHelp)
 	}
-	if strings.Contains(threadHelp, "new") || strings.Contains(threadHelp, "topics") {
+	if helpHasCommand(threadHelp, "new") || helpHasCommand(threadHelp, "topics") {
 		t.Fatalf("topic help exposes board-only commands:\n%s", threadHelp)
 	}
 
@@ -138,6 +138,16 @@ func TestHelpUsesCommandsAvailableAtCurrentLocation(t *testing.T) {
 	if !strings.Contains(adminHelp, "Usage: board archive <slug>") || !strings.Contains(adminHelp, "Permission: administrator") {
 		t.Fatalf("subcommand help is missing registry metadata:\n%s", adminHelp)
 	}
+}
+
+func helpHasCommand(help, name string) bool {
+	for _, line := range strings.Split(help, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == name {
+			return true
+		}
+	}
+	return false
 }
 
 func TestExecuteUsesAvailableHandlersAndPermissions(t *testing.T) {
