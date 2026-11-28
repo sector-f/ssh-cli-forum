@@ -9,6 +9,7 @@ import (
 
 	sqlite3 "github.com/mattn/go-sqlite3"
 	"github.com/sector-f/ssh-cli-forum/internal/service"
+	"github.com/sector-f/ssh-cli-forum/internal/token"
 )
 
 func (s *Store) CreateUser(ctx context.Context, username string, pubKey []byte, inviteCode, role string) error {
@@ -45,7 +46,7 @@ func (s *Store) BootstrapAdmin(ctx context.Context, username string, pubKey []by
 		return err
 	}
 	defer tx.Rollback()
-	code, err := randomToken(24)
+	code, err := token.New(24)
 	if err != nil {
 		return err
 	}
