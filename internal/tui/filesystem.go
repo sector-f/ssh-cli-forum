@@ -23,16 +23,12 @@ type directory interface {
 	ReadDir(virtualFilesystem) ([]filesystemEntry, error)
 }
 
-type rootDirectory struct{}
-type boardsDirectory struct{}
-
-type boardObject struct {
-	board service.Board
-}
-
-type topicObject struct {
-	id int
-}
+var (
+	_ directory        = (*rootDirectory)(nil)
+	_ directory        = (*boardsDirectory)(nil)
+	_ directory        = (*boardObject)(nil)
+	_ filesystemObject = (*topicObject)(nil)
+)
 
 // pathNode is one name in the virtual filesystem tree. The same object can be
 // wrapped by different nodes without the object carrying path or parent state.
@@ -66,17 +62,9 @@ type virtualFilesystem struct {
 	root  *pathNode
 }
 
-func (rootDirectory) Commands() []command  { return nil }
-func (boardsDirectory) Commands() []command { return nil }
-func (boardObject) Commands() []command     { return boardCommands() }
-func (topicObject) Commands() []command     { return threadCommands() }
+type rootDirectory struct{}
 
-func (fs virtualFilesystem) Root() *pathNode {
-	if fs.root != nil {
-		return fs.root
-	}
-	return &pathNode{object: rootDirectory{}}
-}
+func (rootDirectory) Commands() []command { return nil }
 
 func (rootDirectory) Lookup(_ virtualFilesystem, name string) (filesystemObject, error) {
 	if name == "boards" {
@@ -88,6 +76,10 @@ func (rootDirectory) Lookup(_ virtualFilesystem, name string) (filesystemObject,
 func (rootDirectory) ReadDir(_ virtualFilesystem) ([]filesystemEntry, error) {
 	return []filesystemEntry{{name: "boards", object: boardsDirectory{}}}, nil
 }
+
+type boardsDirectory struct{}
+
+func (boardsDirectory) Commands() []command { return nil }
 
 func (boardsDirectory) Lookup(fs virtualFilesystem, name string) (filesystemObject, error) {
 	board, err := fs.model.boards.GetBoardBySlug(fs.model.ctx, name)
@@ -114,6 +106,12 @@ func (boardsDirectory) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) 
 	}
 	return entries, nil
 }
+
+type boardObject struct {
+	board service.Board
+}
+
+func (boardObject) Commands() []command { return boardCommands() }
 
 func (l boardObject) Lookup(fs virtualFilesystem, name string) (filesystemObject, error) {
 	id, err := strconv.Atoi(name)
@@ -145,6 +143,15 @@ func (l boardObject) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) {
 	return entries, nil
 }
 
+type topicObject struct {
+	id int
+}
+
+func (topicObject) Commands() []command { return threadCommands() }
+
+// Resolve interprets paths by traversing directory-provided lookups. Relative
+// paths are anchored at the supplied path node; absolute paths start at root.
+
 func (m *sessionModel) currentLocation() *pathNode {
 	if m.location == nil {
 		return m.filesystem().Root()
@@ -175,8 +182,14 @@ func (m *sessionModel) filesystem() virtualFilesystem {
 	return virtualFilesystem{model: m, root: m.filesystemRoot}
 }
 
-// Resolve interprets paths by traversing directory-provided lookups. Relative
-// paths are anchored at the supplied path node; absolute paths start at root.
+
+func (fs virtualFilesystem) Root() *pathNode {
+	if fs.root != nil {
+		return fs.root
+	}
+	return &pathNode{object: rootDirectory{}}
+}
+
 func (fs virtualFilesystem) Resolve(base *pathNode, target string) (*pathNode, error) {
 	if target == "" {
 		return base, nil
@@ -214,6 +227,7 @@ func (fs virtualFilesystem) Resolve(base *pathNode, target string) (*pathNode, e
 
 // Children enumerates a directory and attaches each returned object to a new
 // path node. The directory object itself remains unaware of the resulting path.
+
 func (fs virtualFilesystem) Children(parent *pathNode) ([]*pathNode, error) {
 	dir, ok := parent.object.(directory)
 	if !ok {
@@ -233,6 +247,7 @@ func (fs virtualFilesystem) Children(parent *pathNode) ([]*pathNode, error) {
 }
 
 // Paths returns path completions for all currently enumerable locations.
+
 func (fs virtualFilesystem) Paths() []string {
 	root := fs.Root()
 	paths := []string{root.Path()}
