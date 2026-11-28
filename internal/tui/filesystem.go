@@ -36,7 +36,7 @@ type boardLocation struct {
 
 type threadLocation struct {
 	id     int
-	parent location
+	parent boardLocation
 }
 
 type locationEntry struct {
@@ -64,9 +64,6 @@ func (l boardLocation) Path() string {
 }
 
 func (l threadLocation) Path() string {
-	if l.parent == nil {
-		return path.Join("/", strconv.Itoa(l.id))
-	}
 	return path.Join(l.parent.Path(), strconv.Itoa(l.id))
 }
 
