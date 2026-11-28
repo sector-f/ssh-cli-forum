@@ -2,14 +2,13 @@ package sqlite
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
+	"github.com/sector-f/ssh-cli-forum/internal/token"
 )
 
 func (s *Store) CreateInvite(ctx context.Context, code string, expiresAt time.Time) error {
@@ -78,12 +77,4 @@ func (s *Store) RevokeInvite(ctx context.Context, code string) error {
 		}
 	}
 	return err
-}
-
-func randomToken(bytes int) (string, error) {
-	buf := make([]byte, bytes)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
 }
