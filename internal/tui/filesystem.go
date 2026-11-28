@@ -94,21 +94,26 @@ func (fs virtualFilesystem) Resolve(base location, target string) (location, err
 	if base == nil {
 		base = rootLocation{}
 	}
-	if !path.IsAbs(target) {
-		target = path.Join(base.Path(), target)
-	}
-	target = path.Clean(target)
 
-	current := location(rootLocation{})
-	for _, component := range strings.Split(strings.Trim(target, "/"), "/") {
-		if component == "" || component == "." {
+	current := base
+	if path.IsAbs(target) {
+		current = rootLocation{}
+	}
+	for _, component := range strings.Split(target, "/") {
+		switch component {
+		case "", ".":
 			continue
+		case "..":
+			if parent := current.Parent(); parent != nil {
+				current = parent
+			}
+		default:
+			next, err := fs.child(current, component)
+			if err != nil {
+				return nil, err
+			}
+			current = next
 		}
-		next, err := fs.child(current, component)
-		if err != nil {
-			return nil, err
-		}
-		current = next
 	}
 	return current, nil
 }
@@ -227,7 +232,9 @@ func (fs virtualFilesystem) Children(loc location) ([]locationEntry, error) {
 
 // Paths returns path completions for all currently enumerable locations.
 func (fs virtualFilesystem) Paths() []string {
-	paths := []string{"/"}
+	// Root collections are useful as both absolute destinations and
+	// directory prefixes. Nested directories use a trailing slash only.
+	paths := []string{"/", "/boards", "/recent"}
 	var walk func(location)
 	walk = func(parent location) {
 		entries, err := fs.Children(parent)
@@ -236,11 +243,17 @@ func (fs virtualFilesystem) Paths() []string {
 		}
 		for _, entry := range entries {
 			entryPath := entry.location.Path()
-			paths = append(paths, entryPath)
 			if isDirectory(entry.location) {
-				paths = append(paths, entryPath+"/")
+				switch entry.location.(type) {
+				case boardsLocation, recentLocation:
+					// Already included above.
+				default:
+					paths = append(paths, entryPath+"/")
+				}
 				walk(entry.location)
+				continue
 			}
+			paths = append(paths, entryPath)
 		}
 	}
 	walk(rootLocation{})
