@@ -9,95 +9,104 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-// A location is a node in the forum's virtual filesystem. Each domain object
-// has one canonical location; collections such as recent activity are exposed
-// as commands rather than alternate paths to the same object.
-type location interface {
-	Path() string
-	Parent() location
+// A filesystem object describes a forum resource. It has no knowledge of the
+// path at which it is exposed; paths belong to pathNode instead.
+type filesystemObject interface {
 	Commands() []command
 }
 
-// A directory owns the rules for looking up and enumerating its children.
-// The filesystem resolver only needs this interface, so adding a new directory
-// does not require changes to path traversal.
+// Directories provide lookup and enumeration independently of their location
+// in the filesystem tree.
 type directory interface {
-	location
-	Lookup(virtualFilesystem, string) (location, error)
-	ReadDir(virtualFilesystem) ([]locationEntry, error)
+	filesystemObject
+	Lookup(virtualFilesystem, string) (filesystemObject, error)
+	ReadDir(virtualFilesystem) ([]filesystemEntry, error)
 }
 
-type rootLocation struct{}
-type boardsLocation struct{}
+type rootDirectory struct{}
+type boardsDirectory struct{}
 
-type boardLocation struct {
+type boardObject struct {
 	board service.Board
 }
 
-type threadLocation struct {
-	id     int
-	parent boardLocation
+type topicObject struct {
+	id int
 }
 
-type locationEntry struct {
-	name     string
-	location location
+// pathNode is one name in the virtual filesystem tree. The same object can be
+// wrapped by different nodes without the object carrying path or parent state.
+type pathNode struct {
+	name   string
+	object filesystemObject
+	parent *pathNode
+}
+
+func (n *pathNode) Path() string {
+	if n == nil || n.parent == nil {
+		return "/"
+	}
+	return path.Join(n.parent.Path(), n.name)
+}
+
+func (n *pathNode) Parent() *pathNode {
+	if n == nil {
+		return nil
+	}
+	return n.parent
+}
+
+type filesystemEntry struct {
+	name   string
+	object filesystemObject
 }
 
 type virtualFilesystem struct {
 	model *sessionModel
+	root  *pathNode
 }
 
-func (rootLocation) Path() string          { return "/" }
-func (rootLocation) Parent() location      { return nil }
-func (rootLocation) Commands() []command   { return nil }
-func (boardsLocation) Path() string        { return "/boards" }
-func (boardsLocation) Parent() location    { return rootLocation{} }
-func (boardsLocation) Commands() []command { return nil }
-func (boardLocation) Parent() location     { return boardsLocation{} }
-func (boardLocation) Commands() []command  { return boardCommands() }
-func (l threadLocation) Parent() location  { return l.parent }
-func (threadLocation) Commands() []command { return threadCommands() }
+func (rootDirectory) Commands() []command  { return nil }
+func (boardsDirectory) Commands() []command { return nil }
+func (boardObject) Commands() []command     { return boardCommands() }
+func (topicObject) Commands() []command     { return threadCommands() }
 
-func (l boardLocation) Path() string {
-	return path.Join("/boards", l.board.Slug)
-}
-
-func (l threadLocation) Path() string {
-	return path.Join(l.parent.Path(), strconv.Itoa(l.id))
-}
-
-func (rootLocation) Lookup(_ virtualFilesystem, name string) (location, error) {
-	switch name {
-	case "boards":
-		return boardsLocation{}, nil
-	default:
-		return nil, fmt.Errorf("no such location: %s", path.Join("/", name))
+func (fs virtualFilesystem) Root() *pathNode {
+	if fs.root != nil {
+		return fs.root
 	}
+	return &pathNode{object: rootDirectory{}}
 }
 
-func (rootLocation) ReadDir(_ virtualFilesystem) ([]locationEntry, error) {
-	return []locationEntry{{name: "boards", location: boardsLocation{}}}, nil
+func (rootDirectory) Lookup(_ virtualFilesystem, name string) (filesystemObject, error) {
+	if name == "boards" {
+		return boardsDirectory{}, nil
+	}
+	return nil, fmt.Errorf("no such entry: %s", name)
 }
 
-func (boardsLocation) Lookup(fs virtualFilesystem, name string) (location, error) {
+func (rootDirectory) ReadDir(_ virtualFilesystem) ([]filesystemEntry, error) {
+	return []filesystemEntry{{name: "boards", object: boardsDirectory{}}}, nil
+}
+
+func (boardsDirectory) Lookup(fs virtualFilesystem, name string) (filesystemObject, error) {
 	board, err := fs.model.boards.GetBoardBySlug(fs.model.ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	return boardLocation{board: board}, nil
+	return boardObject{board: board}, nil
 }
 
-func (boardsLocation) ReadDir(fs virtualFilesystem) ([]locationEntry, error) {
+func (boardsDirectory) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) {
 	boards, err := fs.model.boards.ListBoards(fs.model.ctx)
 	if err != nil {
 		return nil, err
 	}
-	entries := make([]locationEntry, 0, len(boards))
+	entries := make([]filesystemEntry, 0, len(boards))
 	for _, board := range boards {
-		entries = append(entries, locationEntry{
+		entries = append(entries, filesystemEntry{
 			name: board.Slug,
-			location: boardLocation{board: service.Board{
+			object: boardObject{board: service.Board{
 				ID: board.ID, Slug: board.Slug, Name: board.Name,
 				Description: board.Description, Status: board.Status,
 			}},
@@ -106,7 +115,7 @@ func (boardsLocation) ReadDir(fs virtualFilesystem) ([]locationEntry, error) {
 	return entries, nil
 }
 
-func (l boardLocation) Lookup(fs virtualFilesystem, name string) (location, error) {
+func (l boardObject) Lookup(fs virtualFilesystem, name string) (filesystemObject, error) {
 	id, err := strconv.Atoi(name)
 	if err != nil {
 		return nil, service.ErrThreadNotFound
@@ -118,58 +127,67 @@ func (l boardLocation) Lookup(fs virtualFilesystem, name string) (location, erro
 	if thread.BoardID != l.board.ID {
 		return nil, service.ErrThreadNotFound
 	}
-	return threadLocation{id: id, parent: l}, nil
+	return topicObject{id: id}, nil
 }
 
-func (l boardLocation) ReadDir(fs virtualFilesystem) ([]locationEntry, error) {
+func (l boardObject) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) {
 	threads, _, err := fs.model.boards.ListThreadsPage(fs.model.ctx, l.board.ID, 1, 50)
 	if err != nil {
 		return nil, err
 	}
-	entries := make([]locationEntry, 0, len(threads))
+	entries := make([]filesystemEntry, 0, len(threads))
 	for _, thread := range threads {
-		entries = append(entries, locationEntry{
+		entries = append(entries, filesystemEntry{
 			name: strconv.Itoa(thread.ID),
-			location: threadLocation{id: thread.ID, parent: l},
+			object: topicObject{id: thread.ID},
 		})
 	}
 	return entries, nil
 }
 
-func (m *sessionModel) currentLocation() location {
+func (m *sessionModel) currentLocation() *pathNode {
 	if m.location == nil {
-		return rootLocation{}
+		return m.filesystem().Root()
 	}
 	return m.location
 }
 
-func (m *sessionModel) currentBoardLocation() (boardLocation, bool) {
-	loc, ok := m.currentLocation().(boardLocation)
+func (m *sessionModel) currentBoard() (boardObject, bool) {
+	if m.currentLocation().object == nil {
+		return boardObject{}, false
+	}
+	loc, ok := m.currentLocation().object.(boardObject)
 	return loc, ok
 }
 
-func (m *sessionModel) currentThreadLocation() (threadLocation, bool) {
-	loc, ok := m.currentLocation().(threadLocation)
+func (m *sessionModel) currentTopic() (topicObject, bool) {
+	if m.currentLocation().object == nil {
+		return topicObject{}, false
+	}
+	loc, ok := m.currentLocation().object.(topicObject)
 	return loc, ok
 }
 
 func (m *sessionModel) filesystem() virtualFilesystem {
-	return virtualFilesystem{model: m}
+	if m.filesystemRoot == nil {
+		m.filesystemRoot = &pathNode{object: rootDirectory{}}
+	}
+	return virtualFilesystem{model: m, root: m.filesystemRoot}
 }
 
 // Resolve interprets paths by traversing directory-provided lookups. Relative
-// paths are anchored at the current location; absolute paths start at the root.
-func (fs virtualFilesystem) Resolve(base location, target string) (location, error) {
+// paths are anchored at the supplied path node; absolute paths start at root.
+func (fs virtualFilesystem) Resolve(base *pathNode, target string) (*pathNode, error) {
 	if target == "" {
 		return base, nil
 	}
 	if base == nil {
-		base = rootLocation{}
+		base = fs.Root()
 	}
 
 	current := base
 	if path.IsAbs(target) {
-		current = rootLocation{}
+		current = fs.Root()
 	}
 	for _, component := range strings.Split(target, "/") {
 		switch component {
@@ -180,59 +198,71 @@ func (fs virtualFilesystem) Resolve(base location, target string) (location, err
 				current = parent
 			}
 		default:
-			dir, ok := current.(directory)
+			dir, ok := current.object.(directory)
 			if !ok {
 				return nil, fmt.Errorf("%s is not a directory", current.Path())
 			}
-			next, err := dir.Lookup(fs, component)
+			object, err := dir.Lookup(fs, component)
 			if err != nil {
 				return nil, err
 			}
-			current = next
+			current = &pathNode{name: component, object: object, parent: current}
 		}
 	}
 	return current, nil
 }
 
-// Children enumerates a location through its directory interface.
-func (fs virtualFilesystem) Children(loc location) ([]locationEntry, error) {
-	dir, ok := loc.(directory)
+// Children enumerates a directory and attaches each returned object to a new
+// path node. The directory object itself remains unaware of the resulting path.
+func (fs virtualFilesystem) Children(parent *pathNode) ([]*pathNode, error) {
+	dir, ok := parent.object.(directory)
 	if !ok {
-		return nil, fmt.Errorf("%s is not a directory", loc.Path())
+		return nil, fmt.Errorf("%s is not a directory", parent.Path())
 	}
-	return dir.ReadDir(fs)
+	entries, err := dir.ReadDir(fs)
+	if err != nil {
+		return nil, err
+	}
+	children := make([]*pathNode, 0, len(entries))
+	for _, entry := range entries {
+		children = append(children, &pathNode{
+			name: entry.name, object: entry.object, parent: parent,
+		})
+	}
+	return children, nil
 }
 
 // Paths returns path completions for all currently enumerable locations.
 func (fs virtualFilesystem) Paths() []string {
-	paths := []string{"/"}
-	var walk func(location)
-	walk = func(parent location) {
-		entries, err := fs.Children(parent)
+	root := fs.Root()
+	paths := []string{root.Path()}
+	var walk func(*pathNode)
+	walk = func(parent *pathNode) {
+		children, err := fs.Children(parent)
 		if err != nil {
 			return
 		}
-		for _, entry := range entries {
-			entryPath := entry.location.Path()
-			if isDirectory(entry.location) {
+		for _, child := range children {
+			childPath := child.Path()
+			if isDirectory(child.object) {
 				// Root collections are useful without a trailing slash;
 				// nested directories use one to distinguish them from leaves.
 				if parent.Path() == "/" {
-					paths = append(paths, entryPath)
+					paths = append(paths, childPath)
 				} else {
-					paths = append(paths, entryPath+"/")
+					paths = append(paths, childPath+"/")
 				}
-				walk(entry.location)
+				walk(child)
 				continue
 			}
-			paths = append(paths, entryPath)
+			paths = append(paths, childPath)
 		}
 	}
-	walk(rootLocation{})
+	walk(root)
 	return paths
 }
 
-func isDirectory(loc location) bool {
-	_, ok := loc.(directory)
+func isDirectory(object filesystemObject) bool {
+	_, ok := object.(directory)
 	return ok
 }

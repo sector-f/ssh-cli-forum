@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -8,10 +9,10 @@ import (
 )
 
 func TestCommandRegistryMetadata(t *testing.T) {
-	locations := []location{
-		rootLocation{},
-		boardLocation{board: service.Board{ID: 1, Slug: "general"}},
-		threadLocation{id: 12, parent: boardLocation{board: service.Board{ID: 1, Slug: "general"}}},
+	locations := []*pathNode{
+		rootNode(),
+		boardNode(service.Board{ID: 1, Slug: "general"}),
+		topicNode(service.Board{ID: 1, Slug: "general"}, 12),
 	}
 	for _, loc := range locations {
 		model := &sessionModel{user: service.User{Role: service.RoleAdmin}, location: loc}
@@ -43,7 +44,7 @@ func TestCommandRegistryMetadata(t *testing.T) {
 }
 
 func TestCommandAvailabilityFollowsLocation(t *testing.T) {
-	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootLocation{}}
+	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootNode()}
 	rootCommands := commandNamesForContext(member)
 	rootNames := strings.Join(rootCommands, " ")
 	for _, unavailable := range []string{"topics", "new", "reply", "delete-reply"} {
@@ -58,7 +59,7 @@ func TestCommandAvailabilityFollowsLocation(t *testing.T) {
 		t.Fatalf("root command list is missing global navigation, recent activity, or ID-based deletion: %s", rootNames)
 	}
 
-	member.location = boardLocation{board: service.Board{ID: 1, Slug: "general"}}
+	member.location = boardNode(service.Board{ID: 1, Slug: "general"})
 	boardCommandsForUser := commandNamesForContext(member)
 	boardNames := strings.Join(boardCommandsForUser, " ")
 	for _, available := range []string{"topics", "new"} {
@@ -70,7 +71,7 @@ func TestCommandAvailabilityFollowsLocation(t *testing.T) {
 		t.Fatalf("board command list includes topic-only commands: %s", boardNames)
 	}
 
-	member.location = threadLocation{id: 12, parent: boardLocation{board: service.Board{ID: 1, Slug: "general"}}}
+	member.location = topicNode(service.Board{ID: 1, Slug: "general"}, 12)
 	threadCommandsForUser := commandNamesForContext(member)
 	threadNames := strings.Join(threadCommandsForUser, " ")
 	for _, available := range []string{"reply", "delete-topic", "delete-reply"} {
@@ -84,13 +85,13 @@ func TestCommandAvailabilityFollowsLocation(t *testing.T) {
 }
 
 func TestContextualDeleteTopicShadowsGlobalCommand(t *testing.T) {
-	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootLocation{}}
+	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootNode()}
 	rootCommand, ok := member.lookupAvailableCommand("delete-topic")
 	if !ok || requiredArguments(rootCommand) != 1 {
 		t.Fatalf("global delete-topic should require an explicit ID: %+v, %t", rootCommand, ok)
 	}
 
-	member.location = threadLocation{id: 12, parent: boardLocation{board: service.Board{ID: 1, Slug: "general"}}}
+	member.location = topicNode(service.Board{ID: 1, Slug: "general"}, 12)
 	threadCommand, ok := member.lookupAvailableCommand("delete-topic")
 	if !ok || requiredArguments(threadCommand) != 0 {
 		t.Fatalf("topic-local delete-topic should default to the current topic: %+v, %t", threadCommand, ok)
@@ -101,7 +102,7 @@ func TestContextualDeleteTopicShadowsGlobalCommand(t *testing.T) {
 }
 
 func TestHelpUsesCommandsAvailableAtCurrentLocation(t *testing.T) {
-	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootLocation{}}
+	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootNode()}
 	member.help(nil)
 	rootHelp := strings.Join(member.output, "\n")
 	if !strings.Contains(rootHelp, "cd <path>") || !strings.Contains(rootHelp, "show [topic-id]") {
@@ -114,7 +115,7 @@ func TestHelpUsesCommandsAvailableAtCurrentLocation(t *testing.T) {
 	}
 
 	member.output = nil
-	member.location = boardLocation{board: service.Board{ID: 1, Slug: "general"}}
+	member.location = boardNode(service.Board{ID: 1, Slug: "general"})
 	member.help(nil)
 	boardHelp := strings.Join(member.output, "\n")
 	if !helpHasCommand(boardHelp, "new") || !helpHasCommand(boardHelp, "topics") || helpHasCommand(boardHelp, "reply") {
@@ -122,7 +123,7 @@ func TestHelpUsesCommandsAvailableAtCurrentLocation(t *testing.T) {
 	}
 
 	member.output = nil
-	member.location = threadLocation{id: 12, parent: boardLocation{board: service.Board{ID: 1, Slug: "general"}}}
+	member.location = topicNode(service.Board{ID: 1, Slug: "general"}, 12)
 	member.help(nil)
 	threadHelp := strings.Join(member.output, "\n")
 	if !strings.Contains(threadHelp, "reply") || !strings.Contains(threadHelp, "delete-reply") || !strings.Contains(threadHelp, "delete-topic") {
@@ -132,7 +133,7 @@ func TestHelpUsesCommandsAvailableAtCurrentLocation(t *testing.T) {
 		t.Fatalf("topic help exposes board-only commands:\n%s", threadHelp)
 	}
 
-	admin := &sessionModel{user: service.User{Role: service.RoleAdmin}, location: rootLocation{}}
+	admin := &sessionModel{user: service.User{Role: service.RoleAdmin}, location: rootNode()}
 	admin.help([]string{"board", "archive"})
 	adminHelp := strings.Join(admin.output, "\n")
 	if !strings.Contains(adminHelp, "Usage: board archive <slug>") || !strings.Contains(adminHelp, "Permission: administrator") {
@@ -151,7 +152,7 @@ func helpHasCommand(help, name string) bool {
 }
 
 func TestExecuteUsesAvailableHandlersAndPermissions(t *testing.T) {
-	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: boardsLocation{}}
+	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: boardsListNode()}
 	quit, _ := member.execute("pwd")
 	if quit || len(member.output) != 1 || member.output[0] != "/boards" {
 		t.Fatalf("pwd dispatch failed: quit=%t output=%v", quit, member.output)
@@ -169,25 +170,25 @@ func TestExecuteUsesAvailableHandlersAndPermissions(t *testing.T) {
 }
 
 func TestCompletionUsesAvailableCommands(t *testing.T) {
-	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootLocation{}}
+	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootNode()}
 	rootCommands := member.completionCandidates(nil, "")
 	if !contains(rootCommands, "pwd") || !contains(rootCommands, "recent") || contains(rootCommands, "new") || contains(rootCommands, "reply") {
 		t.Fatalf("root completion has incorrect commands: %v", rootCommands)
 	}
 
-	member.location = boardLocation{board: service.Board{ID: 1, Slug: "general"}}
+	member.location = boardNode(service.Board{ID: 1, Slug: "general"})
 	boardCommandsForUser := member.completionCandidates(nil, "")
 	if !contains(boardCommandsForUser, "new") || !contains(boardCommandsForUser, "topics") || contains(boardCommandsForUser, "reply") {
 		t.Fatalf("board completion has incorrect commands: %v", boardCommandsForUser)
 	}
 
-	member.location = threadLocation{id: 12, parent: boardLocation{board: service.Board{ID: 1, Slug: "general"}}}
+	member.location = topicNode(service.Board{ID: 1, Slug: "general"}, 12)
 	threadCommandsForUser := member.completionCandidates(nil, "")
 	if !contains(threadCommandsForUser, "reply") || !contains(threadCommandsForUser, "delete-reply") || contains(threadCommandsForUser, "new") {
 		t.Fatalf("topic completion has incorrect commands: %v", threadCommandsForUser)
 	}
 
-	admin := &sessionModel{user: service.User{Role: service.RoleAdmin}, location: rootLocation{}}
+	admin := &sessionModel{user: service.User{Role: service.RoleAdmin}, location: rootNode()}
 	adminCommands := admin.completionCandidates(nil, "")
 	if !contains(adminCommands, "board") || !contains(adminCommands, "invite") {
 		t.Fatalf("admin completion is missing privileged commands: %v", adminCommands)
@@ -198,14 +199,14 @@ func TestCompletionUsesAvailableCommands(t *testing.T) {
 	}
 }
 
-func TestTypedLocationPathsAndParents(t *testing.T) {
-	root := rootLocation{}
-	boards := boardsLocation{}
-	board := boardLocation{board: service.Board{ID: 4, Slug: "general"}}
-	topic := threadLocation{id: 12, parent: board}
+func TestFilesystemPathTreeBuildsCanonicalPaths(t *testing.T) {
+	root := rootNode()
+	boards := boardsListNode()
+	board := boardNode(service.Board{ID: 4, Slug: "general"})
+	topic := topicNode(service.Board{ID: 4, Slug: "general"}, 12)
 
 	if root.Path() != "/" || boards.Path() != "/boards" || board.Path() != "/boards/general" {
-		t.Fatalf("unexpected base paths: root=%q boards=%q board=%q", root.Path(), boards.Path(), board.Path())
+		t.Fatalf("unexpected paths: root=%q boards=%q board=%q", root.Path(), boards.Path(), board.Path())
 	}
 	if topic.Path() != "/boards/general/12" {
 		t.Fatalf("unexpected canonical topic path: %q", topic.Path())
@@ -213,8 +214,8 @@ func TestTypedLocationPathsAndParents(t *testing.T) {
 	if topic.Parent().Path() != board.Path() {
 		t.Fatal("topic parent was not preserved")
 	}
-	if board.Parent().Path() != boards.Path() || boards.Parent().Path() != root.Path() {
-		t.Fatal("location ancestry was not preserved")
+	if board.Parent().Path() != "/boards" || boards.Parent().Path() != "/" {
+		t.Fatal("path-node ancestry was not preserved")
 	}
 }
 
@@ -225,4 +226,23 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func rootNode() *pathNode {
+	return &pathNode{object: rootDirectory{}}
+}
+
+func boardsListNode() *pathNode {
+	root := rootNode()
+	return &pathNode{name: "boards", object: boardsDirectory{}, parent: root}
+}
+
+func boardNode(board service.Board) *pathNode {
+	boards := boardsListNode()
+	return &pathNode{name: board.Slug, object: boardObject{board: board}, parent: boards}
+}
+
+func topicNode(board service.Board, id int) *pathNode {
+	boardPath := boardNode(board)
+	return &pathNode{name: strconv.Itoa(id), object: topicObject{id: id}, parent: boardPath}
 }
