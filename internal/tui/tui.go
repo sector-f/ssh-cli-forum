@@ -743,7 +743,25 @@ func (m *sessionModel) listRecentTopics() {
 }
 
 func (m *sessionModel) showCurrent() {
+	m.showLocation(nil)
+}
+
+func (m *sessionModel) showLocation(args []string) {
+	if len(args) > 1 {
+		m.addOutput("Usage: show [path]")
+		return
+	}
+
 	target := m.currentLocation()
+	if len(args) == 1 {
+		resolved, err := m.filesystem().Resolve(m.currentLocation(), args[0])
+		if err != nil {
+			m.fail(err)
+			return
+		}
+		target = resolved
+	}
+
 	object, ok := target.object.(displayable)
 	if !ok {
 		m.addOutput(fmt.Sprintf("Nothing to show at %s.", target.Path()))

@@ -311,21 +311,40 @@ func TestBoardReadDirReturnsEveryTopicAcrossPages(t *testing.T) {
 	}
 }
 
+func TestBoardsDirectoryDisplaysPreviousBoardTable(t *testing.T) {
+	boardService := &testBoardService{
+		boards: []service.BoardListing{
+			{ID: 7, Slug: "general", Name: "General Discussion", Description: "A place for general topics.", Status: service.BoardActive},
+			{ID: 8, Slug: "development", Name: "Development", Status: service.BoardArchived},
+		},
+	}
+	fs := virtualFilesystem{model: &sessionModel{boards: boardService}}
+	content, err := (boardsDirectory{}).Display(fs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"SLUG                 BOARD                         STATUS",
+		"general", "General Discussion", "active",
+		"A place for general topics.", "development", "Development", "archived",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("boards directory display is missing %q:\n%s", want, content)
+		}
+	}
+}
+
 func TestBoardAndTopicDisplayTheirOwnContent(t *testing.T) {
+	threads := make([]service.ThreadListing, 105)
+	for i := range threads {
+		threads[i] = service.ThreadListing{
+			ID: i + 1, Title: fmt.Sprintf("Topic %03d", i+1), ReplyCount: i,
+		}
+	}
 	board := boardObject{board: service.Board{
 		ID: 7, Slug: "general", Name: "General Discussion",
 		Description: "A place for general topics.", Status: service.BoardActive,
 	}}
-	boardContent, err := board.Display(virtualFilesystem{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"General Discussion", "Slug: general", "Status: active", "A place for general topics."} {
-		if !strings.Contains(boardContent, want) {
-			t.Errorf("board content does not contain %q:\n%s", want, boardContent)
-		}
-	}
-
 	thread := service.Thread{
 		ID: 42, BoardID: 7, Title: "A topic",
 		Author: service.User{Username: "alice"}, Body: "Opening post",
@@ -338,10 +357,24 @@ func TestBoardAndTopicDisplayTheirOwnContent(t *testing.T) {
 		}
 	}
 	boardService := &testBoardService{
+		threads: map[int][]service.ThreadListing{7: threads},
 		threadDetails: map[int]service.Thread{42: thread},
 		comments: map[int][]service.Comment{42: comments},
 	}
 	fs := virtualFilesystem{model: &sessionModel{boards: boardService}}
+	boardContent, err := board.Display(fs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"General Discussion — A place for general topics.",
+		"Board status: active", "ID    TOPIC", "Topic 001", "Topic 105",
+	} {
+		if !strings.Contains(boardContent, want) {
+			t.Errorf("board content does not contain %q:\n%s", want, boardContent)
+		}
+	}
+
 	topicContent, err := (topicObject{id: 42}).Display(fs)
 	if err != nil {
 		t.Fatal(err)

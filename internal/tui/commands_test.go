@@ -228,9 +228,9 @@ func TestFilesystemCommandsSeparateListingFromDisplay(t *testing.T) {
 		t.Fatalf("show at root = %q, want a clear no-content message", got)
 	}
 	member.output = nil
-	member.execute("show 42")
-	if got := strings.Join(member.output, "\n"); got != "Usage: show" {
-		t.Fatalf("show with an argument = %q, want usage error", got)
+	member.execute("show /boards general")
+	if got := strings.Join(member.output, "\n"); got != "Usage: show [path]" {
+		t.Fatalf("show with multiple arguments = %q, want usage error", got)
 	}
 
 	member.output = nil
@@ -250,14 +250,25 @@ func TestFilesystemCommandsSeparateListingFromDisplay(t *testing.T) {
 	}
 
 	member.output = nil
+	member.execute("show")
+	boardsContent := strings.Join(member.output, "\n")
+	for _, want := range []string{"SLUG", "general", "General", "active", "Board description"} {
+		if !strings.Contains(boardsContent, want) {
+			t.Errorf("show at /boards is missing %q:\n%s", want, boardsContent)
+		}
+	}
+
+	member.output = nil
 	member.execute("cd general")
 	if len(member.output) != 0 || member.currentLocation().Path() != "/boards/general" {
 		t.Fatalf("cd into board should not display it: output=%v path=%q", member.output, member.currentLocation().Path())
 	}
 	member.execute("show")
 	boardContent := strings.Join(member.output, "\n")
-	if !strings.Contains(boardContent, "Board description") || strings.Contains(boardContent, "42") {
-		t.Fatalf("show on a board should display only its own content:\n%s", boardContent)
+	for _, want := range []string{"General — Board description", "Board status: active", "ID    TOPIC", "42", "Topic title"} {
+		if !strings.Contains(boardContent, want) {
+			t.Errorf("show on a board is missing %q:\n%s", want, boardContent)
+		}
 	}
 
 	member.output = nil
@@ -271,6 +282,13 @@ func TestFilesystemCommandsSeparateListingFromDisplay(t *testing.T) {
 	if len(member.output) != 0 || member.currentLocation().Path() != "/boards/general/42" {
 		t.Fatalf("cd into topic should only change location: output=%v path=%q", member.output, member.currentLocation().Path())
 	}
+	member.execute("show /boards/")
+	boardsContent = strings.Join(member.output, "\n")
+	if !strings.Contains(boardsContent, "SLUG") || !strings.Contains(boardsContent, "general") {
+		t.Fatalf("show /boards/ from a topic should display the board listing:\n%s", boardsContent)
+	}
+
+	member.output = nil
 	member.execute("show")
 	topicContent := strings.Join(member.output, "\n")
 	for _, want := range []string{"Topic title", "Opening post", "A reply"} {
