@@ -169,7 +169,7 @@ func (m *sessionModel) inviteCodes() []string {
 }
 
 func (m *sessionModel) topicIDs() []string {
-	topics, err := m.boards.RecentThreads(m.ctx, 100)
+	topics, err := m.boards.RecentThreads(m.ctx, recentTopicLimit)
 	if err != nil {
 		return nil
 	}
