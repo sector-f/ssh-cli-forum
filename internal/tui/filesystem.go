@@ -67,16 +67,6 @@ type virtualFilesystem struct {
 }
 
 func (rootDirectory) Commands() []command  { return nil }
-func (boardsDirectory) Commands() []command { return nil }
-func (boardObject) Commands() []command     { return boardCommands() }
-func (topicObject) Commands() []command     { return threadCommands() }
-
-func (fs virtualFilesystem) Root() *pathNode {
-	if fs.root != nil {
-		return fs.root
-	}
-	return &pathNode{object: rootDirectory{}}
-}
 
 func (rootDirectory) Lookup(_ virtualFilesystem, name string) (filesystemObject, error) {
 	if name == "boards" {
@@ -88,6 +78,8 @@ func (rootDirectory) Lookup(_ virtualFilesystem, name string) (filesystemObject,
 func (rootDirectory) ReadDir(_ virtualFilesystem) ([]filesystemEntry, error) {
 	return []filesystemEntry{{name: "boards", object: boardsDirectory{}}}, nil
 }
+
+func (boardsDirectory) Commands() []command { return nil }
 
 func (boardsDirectory) Lookup(fs virtualFilesystem, name string) (filesystemObject, error) {
 	board, err := fs.model.boards.GetBoardBySlug(fs.model.ctx, name)
@@ -114,6 +106,8 @@ func (boardsDirectory) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) 
 	}
 	return entries, nil
 }
+
+func (boardObject) Commands() []command     { return boardCommands() }
 
 func (l boardObject) Lookup(fs virtualFilesystem, name string) (filesystemObject, error) {
 	id, err := strconv.Atoi(name)
@@ -144,6 +138,8 @@ func (l boardObject) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) {
 	}
 	return entries, nil
 }
+
+func (topicObject) Commands() []command     { return threadCommands() }
 
 func (m *sessionModel) currentLocation() *pathNode {
 	if m.location == nil {
@@ -177,6 +173,14 @@ func (m *sessionModel) filesystem() virtualFilesystem {
 
 // Resolve interprets paths by traversing directory-provided lookups. Relative
 // paths are anchored at the supplied path node; absolute paths start at root.
+
+func (fs virtualFilesystem) Root() *pathNode {
+	if fs.root != nil {
+		return fs.root
+	}
+	return &pathNode{object: rootDirectory{}}
+}
+
 func (fs virtualFilesystem) Resolve(base *pathNode, target string) (*pathNode, error) {
 	if target == "" {
 		return base, nil
@@ -214,6 +218,7 @@ func (fs virtualFilesystem) Resolve(base *pathNode, target string) (*pathNode, e
 
 // Children enumerates a directory and attaches each returned object to a new
 // path node. The directory object itself remains unaware of the resulting path.
+
 func (fs virtualFilesystem) Children(parent *pathNode) ([]*pathNode, error) {
 	dir, ok := parent.object.(directory)
 	if !ok {
@@ -233,6 +238,7 @@ func (fs virtualFilesystem) Children(parent *pathNode) ([]*pathNode, error) {
 }
 
 // Paths returns path completions for all currently enumerable locations.
+
 func (fs virtualFilesystem) Paths() []string {
 	root := fs.Root()
 	paths := []string{root.Path()}
