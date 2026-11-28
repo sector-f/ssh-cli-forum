@@ -103,7 +103,7 @@ func NewProgram(sess ssh.Session, userService service.UserService, boardService 
 			"Welcome, " + user.Username + ".",
 			"Type 'help' for available commands.",
 			"",
-			"Use 'ls' to list this location and 'cd' to navigate.",
+			"Use 'ls' to list entries, 'cd' to navigate, and 'show' to display resource content.",
 		},
 	}
 	// Deliberately omit WithAltScreen: this is a command-oriented terminal interface.
@@ -693,48 +693,22 @@ func (m *sessionModel) listLocation(args []string) {
 		}
 		target = resolved
 	}
-	m.displayLocation(target)
-}
 
-func (m *sessionModel) displayLocation(target *pathNode) {
-	switch object := target.object.(type) {
-	case rootDirectory:
-		children, err := m.filesystem().Children(target)
-		if err != nil {
-			m.fail(err)
-			return
+	children, err := m.filesystem().Children(target)
+	if err != nil {
+		m.fail(err)
+		return
+	}
+	if len(children) == 0 {
+		m.addOutput("No entries.")
+		return
+	}
+	for _, child := range children {
+		name := child.name
+		if isDirectory(child.object) {
+			name += "/"
 		}
-		for _, child := range children {
-			name := child.name
-			if isDirectory(child.object) {
-				name += "/"
-			}
-			m.addOutput(name)
-		}
-	case boardsDirectory:
-		children, err := m.filesystem().Children(target)
-		if err != nil {
-			m.fail(err)
-			return
-		}
-		boards := make([]service.BoardListing, 0, len(children))
-		for _, child := range children {
-			board, ok := child.object.(boardObject)
-			if !ok {
-				continue
-			}
-			boards = append(boards, service.BoardListing{
-				ID: board.board.ID, Slug: board.board.Slug, Name: board.board.Name,
-				Description: board.board.Description, Status: board.board.Status,
-			})
-		}
-		m.printBoards(boards)
-	case boardObject:
-		m.printBoardTopics(object.board.Slug, 1)
-	case topicObject:
-		m.displayThread(object.id, 1)
-	default:
-		m.addOutput("No such location.")
+		m.addOutput(name)
 	}
 }
 
@@ -753,153 +727,39 @@ func (m *sessionModel) listRecentTopics() {
 	m.addOutput("RECENT ACTIVITY")
 	m.addOutput("ID    TOPIC                                            REPLIES  LAST ACTIVITY")
 	for _, thread := range threads {
+		board, err := m.boards.GetBoardByID(m.ctx, thread.BoardID)
+		if err != nil {
+			m.fail(err)
+			continue
+		}
 		title := thread.Title
 		if len(title) > 46 {
 			title = title[:43] + "..."
 		}
 		m.addOutput(fmt.Sprintf("%-4d  %-46s %7d  %s", thread.ID, title, thread.ReplyCount, relativeTime(thread.LastActivityAt)))
+		m.addOutput(fmt.Sprintf("      cd /boards/%s/%d", board.Slug, thread.ID))
 	}
-	m.addOutput("Use 'show <topic-id>' to open a topic.")
+	m.addOutput("Use 'cd <path>' to open a topic.")
 }
 
-func (m *sessionModel) printBoards(boards []service.BoardListing) {
-	if len(boards) == 0 {
-		m.addOutput("No boards have been created.")
-		return
-	}
-	m.addOutput("SLUG                 BOARD                         STATUS")
-	for _, b := range boards {
-		m.addOutput(fmt.Sprintf("%-20s %-29s %s", b.Slug, b.Name, b.Status))
-		if b.Description != "" {
-			m.addOutput("  " + b.Description)
-		}
-	}
-}
-
-func (m *sessionModel) printBoardTopics(slug string, page int) {
-	b, err := m.boards.GetBoardBySlug(m.ctx, slug)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	m.addOutput(fmt.Sprintf("%s — %s", b.Name, b.Description))
-	m.addOutput(fmt.Sprintf("Board status: %s", b.Status))
-	threads, total, err := m.boards.ListThreadsPage(m.ctx, b.ID, page, 20)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	m.printThreadList(threads, page, total)
-}
-
-func (m *sessionModel) listTopics(args []string) {
-	board, ok := m.currentBoard()
+func (m *sessionModel) showCurrent() {
+	target := m.currentLocation()
+	object, ok := target.object.(displayable)
 	if !ok {
-		m.addOutput("'topics' is only available inside a board.")
+		m.addOutput(fmt.Sprintf("Nothing to show at %s.", target.Path()))
 		return
 	}
-	page := pageArgument(args)
-	threads, total, err := m.boards.ListThreadsPage(m.ctx, board.board.ID, page, 20)
+	content, err := object.Display(m.filesystem())
 	if err != nil {
 		m.fail(err)
 		return
 	}
-	m.printThreadList(threads, page, total)
+	if strings.TrimSpace(content) == "" {
+		m.addOutput(fmt.Sprintf("No content to show at %s.", target.Path()))
+		return
+	}
+	m.addOutput(content)
 }
-
-func (m *sessionModel) printThreadList(threads []service.ThreadListing, page, total int) {
-	if len(threads) == 0 {
-		m.addOutput("No topics found.")
-		return
-	}
-	m.addOutput("ID    TOPIC                                            REPLIES  LAST ACTIVITY")
-	for _, t := range threads {
-		title := t.Title
-		if len(title) > 46 {
-			title = title[:43] + "..."
-		}
-		m.addOutput(fmt.Sprintf("%-4d  %-46s %7d  %s", t.ID, title, t.ReplyCount, relativeTime(t.LastActivityAt)))
-	}
-	start := (page-1)*20 + 1
-	end := start + len(threads) - 1
-	if end > total {
-		end = total
-	}
-	m.addOutput(fmt.Sprintf("Showing %d-%d of %d. Use 'topics --page %d' for more.", start, end, total, page+1))
-}
-
-
-
-func (m *sessionModel) showCurrent(args []string) {
-	page := pageArgument(args)
-	if len(args) > 0 && args[0] != "--page" {
-		id, err := strconv.Atoi(args[0])
-		if err != nil {
-			m.fail(fmt.Errorf("expected a topic ID"))
-			return
-		}
-		thread, err := m.boards.GetThreadByID(m.ctx, id)
-		if err != nil {
-			m.fail(err)
-			return
-		}
-		board, err := m.boards.GetBoardByID(m.ctx, thread.BoardID)
-		if err != nil {
-			m.fail(err)
-			return
-		}
-		// An explicit topic ID navigates through its canonical filesystem path.
-		target, err := m.filesystem().Resolve(m.filesystem().Root(), fmt.Sprintf("/boards/%s/%d", board.Slug, id))
-		if err != nil {
-			m.fail(err)
-			return
-		}
-		m.location = target
-		m.displayThread(id, page)
-		return
-	}
-
-	current, ok := m.currentTopic()
-	if !ok {
-		m.fail(fmt.Errorf("show requires a topic ID unless already inside a topic"))
-		return
-	}
-	m.displayThread(current.id, page)
-}
-
-func (m *sessionModel) displayThread(id, page int) {
-	t, err := m.boards.GetThreadByID(m.ctx, id)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	comments, total, err := m.boards.ListCommentsPage(m.ctx, id, page, 10)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	m.addOutput(fmt.Sprintf("[%d] %s", t.ID, t.Title))
-	m.addOutput(fmt.Sprintf("Started by %s · %s · %d replies", t.Author.Username, t.CreatedAt.Format("2006-01-02 15:04"), total))
-	m.addOutput(strings.Repeat("-", 72))
-	m.addOutput(t.Author.Username + ":")
-	m.addOutput(t.Body)
-	m.addOutput(strings.Repeat("-", 72))
-	for _, c := range comments {
-		m.addOutput(fmt.Sprintf("%s · %s", c.Author.Username, c.PostedAt.Format("2006-01-02 15:04")))
-		m.addOutput(c.Body)
-		m.addOutput(strings.Repeat("-", 72))
-	}
-	if total > 0 {
-		start := (page-1)*10 + 1
-		end := start + len(comments) - 1
-		if end > total {
-			end = total
-		}
-		m.addOutput(fmt.Sprintf("Showing replies %d-%d of %d. Use 'show --page %d' for more.", start, end, total, page+1))
-	}
-}
-
-
 
 func (m *sessionModel) changeDirectory(args []string) {
 	if len(args) != 1 {
@@ -912,7 +772,6 @@ func (m *sessionModel) changeDirectory(args []string) {
 		return
 	}
 	m.location = target
-	m.displayLocation(target)
 }
 
 func (m *sessionModel) startNewTopic() {
@@ -1006,14 +865,14 @@ func (m *sessionModel) finishComposition() {
 			return
 		}
 		m.location = target
-		m.displayThread(threadID, 1)
+		m.showCurrent()
 	case composeReplyBody:
 		err := m.boards.CreateComment(m.ctx, m.draftThreadID, m.user.ID, body)
 		if err != nil {
 			m.fail(err)
 		} else {
 			m.addOutput("Reply posted.")
-			m.displayThread(m.draftThreadID, 1)
+			m.showCurrent()
 		}
 	}
 	m.resetComposition()
@@ -1081,18 +940,6 @@ func (m *sessionModel) targetID(args []string) (int, error) {
 		return 0, fmt.Errorf("delete-topic requires a topic ID outside a topic location")
 	}
 	return 0, fmt.Errorf("usage: delete-topic [topic-id]")
-}
-
-func pageArgument(args []string) int {
-	for i := 0; i < len(args)-1; i++ {
-		if args[i] == "--page" {
-			n, err := strconv.Atoi(args[i+1])
-			if err == nil && n > 0 {
-				return n
-			}
-		}
-	}
-	return 1
 }
 
 func relativeTime(t time.Time) string {

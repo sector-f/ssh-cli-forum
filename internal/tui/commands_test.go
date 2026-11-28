@@ -62,12 +62,12 @@ func TestCommandAvailabilityFollowsLocation(t *testing.T) {
 	member.location = boardNode(service.Board{ID: 1, Slug: "general"})
 	boardCommandsForUser := commandNamesForContext(member)
 	boardNames := strings.Join(boardCommandsForUser, " ")
-	for _, available := range []string{"topics", "new"} {
+	for _, available := range []string{"new"} {
 		if !contains(boardCommandsForUser, available) {
 			t.Fatalf("board command list is missing %q: %s", available, boardNames)
 		}
 	}
-	if contains(boardCommandsForUser, "reply") || contains(boardCommandsForUser, "delete-reply") {
+	if contains(boardCommandsForUser, "topics") || contains(boardCommandsForUser, "reply") || contains(boardCommandsForUser, "delete-reply") {
 		t.Fatalf("board command list includes topic-only commands: %s", boardNames)
 	}
 
@@ -105,7 +105,7 @@ func TestHelpUsesCommandsAvailableAtCurrentLocation(t *testing.T) {
 	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootNode()}
 	member.help(nil)
 	rootHelp := strings.Join(member.output, "\n")
-	if !strings.Contains(rootHelp, "cd <path>") || !strings.Contains(rootHelp, "show [topic-id]") {
+	if !strings.Contains(rootHelp, "cd <path>") || !helpHasCommand(rootHelp, "show") {
 		t.Fatalf("root help is missing global commands:\n%s", rootHelp)
 	}
 	for _, unavailable := range []string{"topics", "new", "reply", "delete-reply"} {
@@ -118,7 +118,7 @@ func TestHelpUsesCommandsAvailableAtCurrentLocation(t *testing.T) {
 	member.location = boardNode(service.Board{ID: 1, Slug: "general"})
 	member.help(nil)
 	boardHelp := strings.Join(member.output, "\n")
-	if !helpHasCommand(boardHelp, "new") || !helpHasCommand(boardHelp, "topics") || helpHasCommand(boardHelp, "reply") {
+	if !helpHasCommand(boardHelp, "new") || helpHasCommand(boardHelp, "topics") || helpHasCommand(boardHelp, "reply") {
 		t.Fatalf("board help has incorrect commands:\n%s", boardHelp)
 	}
 
@@ -169,6 +169,117 @@ func TestExecuteUsesAvailableHandlersAndPermissions(t *testing.T) {
 	}
 }
 
+
+func TestAdminBoardListUsesFilesystemListing(t *testing.T) {
+	root := rootNode()
+	admin := &sessionModel{
+		user: service.User{Role: service.RoleAdmin},
+		boards: &testBoardService{boards: []service.BoardListing{
+			{ID: 1, Slug: "general", Name: "General", Status: service.BoardActive},
+			{ID: 2, Slug: "development", Name: "Development", Status: service.BoardActive},
+		}},
+		location: root,
+		filesystemRoot: root,
+	}
+
+	admin.execute("board list")
+	if got, want := strings.Join(admin.output, "\n"), "general/\ndevelopment/"; got != want {
+		t.Fatalf("board list output = %q, want filesystem entries %q", got, want)
+	}
+}
+
+func TestFilesystemCommandsSeparateListingFromDisplay(t *testing.T) {
+	board := service.Board{
+		ID: 1, Slug: "general", Name: "General",
+		Description: "Board description", Status: service.BoardActive,
+	}
+	boardService := &testBoardService{
+		boards: []service.BoardListing{{
+			ID: board.ID, Slug: board.Slug, Name: board.Name,
+			Description: board.Description, Status: board.Status,
+		}},
+		boardDetails: map[string]service.Board{"general": board},
+		threads: map[int][]service.ThreadListing{
+			1: {{ID: 42, Title: "Topic title"}},
+		},
+		threadDetails: map[int]service.Thread{
+			42: {
+				ID: 42, BoardID: 1, Title: "Topic title",
+				Author: service.User{Username: "alice"}, Body: "Opening post",
+			},
+		},
+		comments: map[int][]service.Comment{
+			42: {{
+				ID: 9, ThreadID: 42, Body: "A reply",
+				Author: service.User{Username: "bob"},
+			}},
+		},
+	}
+	root := rootNode()
+	member := &sessionModel{
+		user: service.User{Role: service.RoleMember},
+		boards: boardService,
+		location: root,
+		filesystemRoot: root,
+	}
+
+	member.execute("show")
+	if got := strings.Join(member.output, "\n"); got != "Nothing to show at /." {
+		t.Fatalf("show at root = %q, want a clear no-content message", got)
+	}
+	member.output = nil
+	member.execute("show 42")
+	if got := strings.Join(member.output, "\n"); got != "Usage: show" {
+		t.Fatalf("show with an argument = %q, want usage error", got)
+	}
+
+	member.output = nil
+	member.execute("ls")
+	if got := strings.Join(member.output, "\n"); got != "boards/" {
+		t.Fatalf("ls at root = %q, want only the immediate boards/ entry", got)
+	}
+
+	member.output = nil
+	member.execute("cd /boards")
+	if len(member.output) != 0 || member.currentLocation().Path() != "/boards" {
+		t.Fatalf("cd should only change location: output=%v path=%q", member.output, member.currentLocation().Path())
+	}
+	member.execute("ls")
+	if got := strings.Join(member.output, "\n"); got != "general/" {
+		t.Fatalf("ls /boards = %q, want general/", got)
+	}
+
+	member.output = nil
+	member.execute("cd general")
+	if len(member.output) != 0 || member.currentLocation().Path() != "/boards/general" {
+		t.Fatalf("cd into board should not display it: output=%v path=%q", member.output, member.currentLocation().Path())
+	}
+	member.execute("show")
+	boardContent := strings.Join(member.output, "\n")
+	if !strings.Contains(boardContent, "Board description") || strings.Contains(boardContent, "42") {
+		t.Fatalf("show on a board should display only its own content:\n%s", boardContent)
+	}
+
+	member.output = nil
+	member.execute("ls")
+	if got := strings.Join(member.output, "\n"); got != "42" {
+		t.Fatalf("ls in board = %q, want topic entry 42", got)
+	}
+
+	member.output = nil
+	member.execute("cd 42")
+	if len(member.output) != 0 || member.currentLocation().Path() != "/boards/general/42" {
+		t.Fatalf("cd into topic should only change location: output=%v path=%q", member.output, member.currentLocation().Path())
+	}
+	member.execute("show")
+	topicContent := strings.Join(member.output, "\n")
+	for _, want := range []string{"Topic title", "Opening post", "A reply"} {
+		if !strings.Contains(topicContent, want) {
+			t.Errorf("show on a topic is missing %q:\n%s", want, topicContent)
+		}
+	}
+}
+
 func TestCompletionUsesAvailableCommands(t *testing.T) {
 	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootNode()}
 	rootCommands := member.completionCandidates(nil, "")
@@ -178,7 +289,7 @@ func TestCompletionUsesAvailableCommands(t *testing.T) {
 
 	member.location = boardNode(service.Board{ID: 1, Slug: "general"})
 	boardCommandsForUser := member.completionCandidates(nil, "")
-	if !contains(boardCommandsForUser, "new") || !contains(boardCommandsForUser, "topics") || contains(boardCommandsForUser, "reply") {
+	if !contains(boardCommandsForUser, "new") || contains(boardCommandsForUser, "topics") || contains(boardCommandsForUser, "reply") {
 		t.Fatalf("board completion has incorrect commands: %v", boardCommandsForUser)
 	}
 

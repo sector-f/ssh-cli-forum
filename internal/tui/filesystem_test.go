@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
@@ -197,11 +199,158 @@ func (testLeafObject) Commands() []command { return nil }
 
 type testBoardService struct {
 	service.BoardService
-	boards []service.BoardListing
+	boards        []service.BoardListing
+	threads       map[int][]service.ThreadListing
+	boardDetails  map[string]service.Board
+	threadDetails map[int]service.Thread
+	comments      map[int][]service.Comment
 }
 
 func (s *testBoardService) ListBoards(context.Context) ([]service.BoardListing, error) {
 	return append([]service.BoardListing(nil), s.boards...), nil
+}
+
+func (s *testBoardService) GetBoardBySlug(_ context.Context, slug string) (service.Board, error) {
+	if board, ok := s.boardDetails[slug]; ok {
+		return board, nil
+	}
+	for _, board := range s.boards {
+		if board.Slug == slug {
+			return service.Board{
+				ID: board.ID, Slug: board.Slug, Name: board.Name,
+				Description: board.Description, Status: board.Status,
+			}, nil
+		}
+	}
+	return service.Board{}, service.ErrBoardNotFound
+}
+
+func (s *testBoardService) GetBoardByID(_ context.Context, id int) (service.Board, error) {
+	for _, board := range s.boardDetails {
+		if board.ID == id {
+			return board, nil
+		}
+	}
+	for _, board := range s.boards {
+		if board.ID == id {
+			return service.Board{
+				ID: board.ID, Slug: board.Slug, Name: board.Name,
+				Description: board.Description, Status: board.Status,
+			}, nil
+		}
+	}
+	return service.Board{}, service.ErrBoardNotFound
+}
+
+func (s *testBoardService) ListThreadsPage(_ context.Context, boardID, page, pageSize int) ([]service.ThreadListing, int, error) {
+	threads := s.threads[boardID]
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	start := (page - 1) * pageSize
+	if start >= len(threads) {
+		return nil, len(threads), nil
+	}
+	end := start + pageSize
+	if end > len(threads) {
+		end = len(threads)
+	}
+	return append([]service.ThreadListing(nil), threads[start:end]...), len(threads), nil
+}
+
+func (s *testBoardService) GetThreadByID(_ context.Context, id int) (service.Thread, error) {
+	thread, ok := s.threadDetails[id]
+	if !ok {
+		return service.Thread{}, service.ErrThreadNotFound
+	}
+	return thread, nil
+}
+
+func (s *testBoardService) ListCommentsPage(_ context.Context, threadID, page, pageSize int) ([]service.Comment, int, error) {
+	comments := s.comments[threadID]
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	start := (page - 1) * pageSize
+	if start >= len(comments) {
+		return nil, len(comments), nil
+	}
+	end := start + pageSize
+	if end > len(comments) {
+		end = len(comments)
+	}
+	return append([]service.Comment(nil), comments[start:end]...), len(comments), nil
+}
+
+
+func TestBoardReadDirReturnsEveryTopicAcrossPages(t *testing.T) {
+	threads := make([]service.ThreadListing, 105)
+	for i := range threads {
+		threads[i] = service.ThreadListing{ID: i + 1}
+	}
+	boardService := &testBoardService{
+		threads: map[int][]service.ThreadListing{7: threads},
+	}
+	fs := virtualFilesystem{model: &sessionModel{boards: boardService}}
+
+	entries, err := (boardObject{board: service.Board{ID: 7}}).ReadDir(fs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != len(threads) {
+		t.Fatalf("ReadDir returned %d topics, want %d", len(entries), len(threads))
+	}
+	if entries[0].name != "1" || entries[len(entries)-1].name != strconv.Itoa(len(threads)) {
+		t.Fatalf("ReadDir returned unexpected topic names: first=%q last=%q", entries[0].name, entries[len(entries)-1].name)
+	}
+}
+
+func TestBoardAndTopicDisplayTheirOwnContent(t *testing.T) {
+	board := boardObject{board: service.Board{
+		ID: 7, Slug: "general", Name: "General Discussion",
+		Description: "A place for general topics.", Status: service.BoardActive,
+	}}
+	boardContent, err := board.Display(virtualFilesystem{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"General Discussion", "Slug: general", "Status: active", "A place for general topics."} {
+		if !strings.Contains(boardContent, want) {
+			t.Errorf("board content does not contain %q:\n%s", want, boardContent)
+		}
+	}
+
+	thread := service.Thread{
+		ID: 42, BoardID: 7, Title: "A topic",
+		Author: service.User{Username: "alice"}, Body: "Opening post",
+	}
+	comments := make([]service.Comment, 105)
+	for i := range comments {
+		comments[i] = service.Comment{
+			ID: i + 1, ThreadID: 42, Body: fmt.Sprintf("Reply %03d", i+1),
+			Author: service.User{Username: "bob"},
+		}
+	}
+	boardService := &testBoardService{
+		threadDetails: map[int]service.Thread{42: thread},
+		comments: map[int][]service.Comment{42: comments},
+	}
+	fs := virtualFilesystem{model: &sessionModel{boards: boardService}}
+	topicContent, err := (topicObject{id: 42}).Display(fs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"[42] A topic", "alice:", "Opening post", "105 replies", "Reply 001", "Reply 105"} {
+		if !strings.Contains(topicContent, want) {
+			t.Errorf("topic content does not contain %q", want)
+		}
+	}
 }
 
 func TestPathNodeUsesStandardPathJoining(t *testing.T) {

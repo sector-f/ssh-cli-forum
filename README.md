@@ -37,12 +37,14 @@ The generated invitation code is printed once. An administrator can also create 
 
 The main interface is command-oriented and does not use Bubble Tea's alternate screen buffer. The `chat` command opens a separate full-screen global chat view in the alternate screen buffer; `/leave` returns to the forum interface.
 
-- `ls`, `cd`, and `pwd` navigate the virtual forum tree.
-- `/boards` lists boards; `/boards/<slug>` lists a board's topics.
-- `/boards/<slug>/<topic-id>` displays a topic and its replies.
+- `ls [path]` lists the immediate entries in a directory, including both child directories and resources; it does not recurse.
+- `cd <path>` changes the current location without displaying it. `pwd` prints the current path.
+- `show` displays the current resource's own content when that resource supports it. It does not list child entries.
+- `/boards` contains board directories. A board is both a directory and a displayable resource: `ls` lists its topic IDs, while `show` displays its name, description, and status.
+- `/boards/<slug>/<topic-id>` is a topic resource; `show` displays its opening post and replies.
 - `new` creates a topic from inside a board.
 - `reply` adds a reply from inside a topic.
-- `recent` lists recently active topics; use `show <topic-id>` to open one at its canonical board path.
+- `recent` lists recently active topics with their canonical paths; use `cd <path>` to open one.
 - `chat` opens the persistent global chat. Enter a message to post and use `/leave` to return to forum navigation. The most recent 100 messages are loaded on entry; the mouse wheel scrolls history.
 - `help` lists available commands and permissions.
 

@@ -85,7 +85,7 @@ func commandRegistry() []command {
 			Handler: commandCallNoArgs(func(m *sessionModel) { m.addOutput(m.currentLocation().Path()) }),
 		},
 		{
-			Name: "ls", Group: "Navigation", Description: "List entries at a location.",
+			Name: "ls", Group: "Navigation", Description: "List immediate entries in a directory.",
 			Arguments: []commandArgument{{Name: "path", Description: "Location to list.", Optional: true, Completion: completionLocations}},
 			Handler: commandCall(func(m *sessionModel, args []string) { m.listLocation(args) }),
 		},
@@ -95,9 +95,14 @@ func commandRegistry() []command {
 			Handler: commandCall(func(m *sessionModel, args []string) { m.changeDirectory(args) }),
 		},
 		{
-			Name: "show", Group: "Navigation", Description: "Open a topic by ID or display the current topic.",
-			Arguments: []commandArgument{{Name: "topic-id", Description: "Topic to open; defaults to the current topic.", Optional: true, Completion: completionTopicIDs}},
-			Handler: commandCall(func(m *sessionModel, args []string) { m.showCurrent(args) }),
+			Name: "show", Group: "Navigation", Description: "Display the current resource's content, when available.",
+			Handler: commandCall(func(m *sessionModel, args []string) {
+				if len(args) != 0 {
+					m.addOutput("Usage: show")
+					return
+				}
+				m.showCurrent()
+			}),
 		},
 		{
 			Name: "recent", Group: "Navigation", Description: "List recently active topics.",
@@ -162,11 +167,6 @@ func commandRegistry() []command {
 
 func boardCommands() []command {
 	return []command{
-		{
-			Name: "topics", Group: "Board", Description: "List topics in the current board.",
-			Arguments: []commandArgument{{Name: "--page N", Description: "Page number.", Optional: true, Candidates: []string{"--page"}}},
-			Handler: commandCall(func(m *sessionModel, args []string) { m.listTopics(args) }),
-		},
 		{
 			Name: "new", Group: "Board", Description: "Create a topic in the current board.",
 			Handler: commandCallNoArgs(func(m *sessionModel) { m.startNewTopic() }),

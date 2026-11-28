@@ -23,10 +23,19 @@ type directory interface {
 	ReadDir(virtualFilesystem) ([]filesystemEntry, error)
 }
 
+// Displayable resources provide their own content independently of whether
+// they can also contain child resources.
+type displayable interface {
+	filesystemObject
+	Display(virtualFilesystem) (string, error)
+}
+
 var (
 	_ directory        = (*rootDirectory)(nil)
 	_ directory        = (*boardsDirectory)(nil)
 	_ directory        = (*boardObject)(nil)
+	_ displayable      = (*boardObject)(nil)
+	_ displayable      = (*topicObject)(nil)
 	_ filesystemObject = (*topicObject)(nil)
 )
 
@@ -129,18 +138,38 @@ func (l boardObject) Lookup(fs virtualFilesystem, name string) (filesystemObject
 }
 
 func (l boardObject) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) {
-	threads, _, err := fs.model.boards.ListThreadsPage(fs.model.ctx, l.board.ID, 1, 50)
-	if err != nil {
-		return nil, err
-	}
-	entries := make([]filesystemEntry, 0, len(threads))
-	for _, thread := range threads {
-		entries = append(entries, filesystemEntry{
-			name: strconv.Itoa(thread.ID),
-			object: topicObject{id: thread.ID},
-		})
+	const pageSize = 100
+	var entries []filesystemEntry
+	for page := 1; ; page++ {
+		threads, total, err := fs.model.boards.ListThreadsPage(fs.model.ctx, l.board.ID, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		for _, thread := range threads {
+			entries = append(entries, filesystemEntry{
+				name: strconv.Itoa(thread.ID),
+				object: topicObject{id: thread.ID},
+			})
+		}
+		if len(entries) >= total || len(threads) == 0 {
+			break
+		}
 	}
 	return entries, nil
+}
+
+// Display returns the board's own metadata. Its topics remain separate child
+// entries and are shown by ls rather than being folded into this content.
+func (l boardObject) Display(_ virtualFilesystem) (string, error) {
+	lines := []string{
+		l.board.Name,
+		"Slug: " + l.board.Slug,
+		"Status: " + l.board.Status,
+	}
+	if l.board.Description != "" {
+		lines = append(lines, "", l.board.Description)
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 type topicObject struct {
@@ -148,6 +177,53 @@ type topicObject struct {
 }
 
 func (topicObject) Commands() []command { return threadCommands() }
+
+// Display returns the topic's opening post and all replies. Replies are read in
+// bounded pages so a topic's displayed content is not silently truncated.
+func (l topicObject) Display(fs virtualFilesystem) (string, error) {
+	if fs.model == nil || fs.model.boards == nil {
+		return "", fmt.Errorf("forum service is unavailable")
+	}
+	thread, err := fs.model.boards.GetThreadByID(fs.model.ctx, l.id)
+	if err != nil {
+		return "", err
+	}
+
+	const pageSize = 100
+	comments, total, err := fs.model.boards.ListCommentsPage(fs.model.ctx, l.id, 1, pageSize)
+	if err != nil {
+		return "", err
+	}
+	for page := 2; len(comments) < total; page++ {
+		nextPage, updatedTotal, err := fs.model.boards.ListCommentsPage(fs.model.ctx, l.id, page, pageSize)
+		if err != nil {
+			return "", err
+		}
+		if updatedTotal > total {
+			total = updatedTotal
+		}
+		if len(nextPage) == 0 {
+			break
+		}
+		comments = append(comments, nextPage...)
+	}
+
+	var content strings.Builder
+	fmt.Fprintf(&content, "[%d] %s\n", thread.ID, thread.Title)
+	fmt.Fprintf(&content, "Started by %s · %s · %d replies\n",
+		thread.Author.Username, thread.CreatedAt.Format("2006-01-02 15:04"), total)
+	content.WriteString(strings.Repeat("-", 72) + "\n")
+	content.WriteString(thread.Author.Username + ":\n")
+	content.WriteString(thread.Body + "\n")
+	content.WriteString(strings.Repeat("-", 72) + "\n")
+	for _, comment := range comments {
+		fmt.Fprintf(&content, "%s · %s\n",
+			comment.Author.Username, comment.PostedAt.Format("2006-01-02 15:04"))
+		content.WriteString(comment.Body + "\n")
+		content.WriteString(strings.Repeat("-", 72) + "\n")
+	}
+	return strings.TrimRight(content.String(), "\n"), nil
+}
 
 // Resolve interprets paths by traversing directory-provided lookups. Relative
 // paths are anchored at the supplied path node; absolute paths start at root.
