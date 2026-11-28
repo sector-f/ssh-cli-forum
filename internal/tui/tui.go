@@ -697,7 +697,7 @@ func (m *sessionModel) listLocation(args []string) {
 func (m *sessionModel) displayLocation(target location) {
 	switch target := target.(type) {
 	case rootLocation:
-		m.addOutput("boards/\nrecent/")
+		m.addOutput("boards/")
 	case boardsLocation:
 		boards, err := m.boards.ListBoards(m.ctx)
 		if err != nil {
@@ -707,8 +707,6 @@ func (m *sessionModel) displayLocation(target location) {
 		m.printBoards(boards)
 	case boardLocation:
 		m.printBoardTopics(target.board.Slug, 1)
-	case recentLocation:
-		m.listRecentTopics()
 	case threadLocation:
 		m.displayThread(target.id, 1)
 	default:
@@ -716,8 +714,10 @@ func (m *sessionModel) displayLocation(target location) {
 	}
 }
 
+const recentTopicLimit = 100
+
 func (m *sessionModel) listRecentTopics() {
-	threads, err := m.boards.RecentThreads(m.ctx, recentLocationLimit)
+	threads, err := m.boards.RecentThreads(m.ctx, recentTopicLimit)
 	if err != nil {
 		m.fail(err)
 		return
@@ -735,7 +735,7 @@ func (m *sessionModel) listRecentTopics() {
 		}
 		m.addOutput(fmt.Sprintf("%-4d  %-46s %7d  %s", thread.ID, title, thread.ReplyCount, relativeTime(thread.LastActivityAt)))
 	}
-	m.addOutput("Use 'cd /recent/<topic-id>' to open a topic.")
+	m.addOutput("Use 'show <topic-id>' to open a topic.")
 }
 
 func (m *sessionModel) printBoards(boards []service.BoardListing) {
