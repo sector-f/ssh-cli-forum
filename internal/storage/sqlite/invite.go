@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
-	"github.com/sector-f/ssh-cli-forum/internal/token"
 )
 
 func (s *Store) CreateInvite(ctx context.Context, code string, expiresAt time.Time) error {
