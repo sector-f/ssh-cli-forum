@@ -9,12 +9,7 @@ import (
 )
 
 func (m *sessionModel) listAdminBoards() {
-	boards, err := m.boards.ListBoards(m.ctx)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	m.printBoards(boards)
+	m.listLocation([]string{"/boards"})
 }
 
 func (m *sessionModel) createAdminBoard(args []string) {
