@@ -31,11 +31,14 @@ type displayable interface {
 }
 
 var (
-	_ directory        = (*rootDirectory)(nil)
-	_ directory        = (*boardsDirectory)(nil)
-	_ directory        = (*boardObject)(nil)
-	_ displayable      = (*boardsDirectory)(nil)
-	_ displayable      = (*boardObject)(nil)
+	_ directory = (*rootDirectory)(nil)
+
+	_ directory   = (*boardsDirectory)(nil)
+	_ displayable = (*boardsDirectory)(nil)
+
+	_ directory   = (*boardObject)(nil)
+	_ displayable = (*boardObject)(nil)
+
 	_ displayable      = (*topicObject)(nil)
 	_ filesystemObject = (*topicObject)(nil)
 )
@@ -173,7 +176,7 @@ func (l boardObject) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) {
 		}
 		for _, thread := range threads {
 			entries = append(entries, filesystemEntry{
-				name: strconv.Itoa(thread.ID),
+				name:   strconv.Itoa(thread.ID),
 				object: topicObject{id: thread.ID},
 			})
 		}
@@ -318,7 +321,6 @@ func (m *sessionModel) filesystem() virtualFilesystem {
 	}
 	return virtualFilesystem{model: m, root: m.filesystemRoot}
 }
-
 
 func (fs virtualFilesystem) Root() *pathNode {
 	if fs.root != nil {
