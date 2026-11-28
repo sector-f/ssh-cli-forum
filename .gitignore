@@ -1,4 +1,8 @@
 *.db
-ssh-cli-forum
+*.db-shm
+*.db-wal
+
 cmd/forumctl/forumctl
+cmd/server/server
+
 id_*
