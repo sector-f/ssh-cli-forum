@@ -99,7 +99,6 @@ func (m *sessionModel) setAdminUserStatus(args []string, status string) {
 	m.addOutput("User updated.")
 }
 
-
 func (m *sessionModel) listUsers() {
 	users, err := m.users.ListUsers(m.ctx)
 	if err != nil {

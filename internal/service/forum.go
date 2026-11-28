@@ -3,8 +3,8 @@ package service
 import "time"
 
 const (
-	RoleMember    = "member"
-	RoleAdmin     = "admin"
+	RoleMember = "member"
+	RoleAdmin  = "admin"
 
 	StatusActive    = "active"
 	StatusSuspended = "suspended"
@@ -72,14 +72,9 @@ type Thread struct {
 }
 
 type Comment struct {
-	ID        int
-	ThreadID  int
-	Author    User
-	Body      string
-	PostedAt  time.Time
+	ID       int
+	ThreadID int
+	Author   User
+	Body     string
+	PostedAt time.Time
 }
-
-
-
-
-

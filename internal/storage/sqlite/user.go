@@ -1,8 +1,8 @@
 package sqlite
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -115,7 +115,7 @@ func (s *Store) AuthenticateUser(ctx context.Context, username string, givenKey 
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]service.User, error) {
-	rows, err := s.db.QueryContext(ctx, userSelect + " ORDER BY username COLLATE NOCASE")
+	rows, err := s.db.QueryContext(ctx, userSelect+" ORDER BY username COLLATE NOCASE")
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,6 @@ func (s *Store) SetUserStatus(ctx context.Context, username, status string) erro
 	}
 	return err
 }
-
 
 func isUniqueConstraint(err error) bool {
 	var sqliteErr sqlite3.Error

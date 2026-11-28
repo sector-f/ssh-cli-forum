@@ -17,7 +17,6 @@ import (
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish/bubbletea"
 	"github.com/sector-f/ssh-cli-forum/internal/service"
-	"github.com/sector-f/ssh-cli-forum/internal/token"
 )
 
 type composeState int
@@ -393,7 +392,6 @@ func (m *sessionModel) latestChatMessageID() int64 {
 	}
 	return latest
 }
-
 
 func (m *sessionModel) appendChatMessageNow(message service.ChatMessage) {
 	if message.ID == 0 {
@@ -1050,7 +1048,6 @@ func (m *sessionModel) deleteOwnReply(args []string) {
 	}
 	m.addOutput("Reply deleted.")
 }
-
 
 func (m *sessionModel) isAdmin() bool { return m.user.Role == service.RoleAdmin }
 

@@ -22,10 +22,10 @@ type Session struct {
 
 func NewSession(actorID int, users UserService, boards BoardService, chat ChatService) *Session {
 	return &Session{
-		UserService: users,
+		UserService:  users,
 		BoardService: boards,
-		ChatService: chat,
-		actorID: actorID,
+		ChatService:  chat,
+		actorID:      actorID,
 	}
 }
 

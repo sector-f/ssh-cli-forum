@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	"io/fs"
 	"fmt"
+	"io/fs"
 	"strings"
 	"time"
 
@@ -95,4 +95,3 @@ func (s *Store) Backup(destination string) error {
 }
 
 func nowText() string { return time.Now().UTC().Format(time.RFC3339Nano) }
-

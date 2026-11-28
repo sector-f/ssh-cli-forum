@@ -93,4 +93,3 @@ func (s *Store) PostMessage(ctx context.Context, channelSlug string, userID int,
 	}
 	return message, nil
 }
-

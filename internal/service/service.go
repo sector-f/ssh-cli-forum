@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"time"
-
 )
 
 const SignupUsername = "signup"
@@ -22,14 +21,14 @@ var (
 	ErrInviteInvalid = errors.New("invalid invite code")
 	ErrInviteRevoked = errors.New("invite code has been revoked")
 
-	ErrBoardNotFound    = errors.New("board not found")
-	ErrThreadNotFound   = errors.New("topic not found")
-	ErrCommentNotFound  = errors.New("reply not found")
-	ErrPermissionDenied = errors.New("permission denied")
-	ErrReadOnly         = errors.New("this board is read-only")
-	ErrAdminExists      = errors.New("an administrator account already exists")
-	ErrLastAdmin        = errors.New("cannot remove the last administrator")
-	ErrInvalidStatus       = errors.New("status must be active or suspended")
+	ErrBoardNotFound      = errors.New("board not found")
+	ErrThreadNotFound     = errors.New("topic not found")
+	ErrCommentNotFound    = errors.New("reply not found")
+	ErrPermissionDenied   = errors.New("permission denied")
+	ErrReadOnly           = errors.New("this board is read-only")
+	ErrAdminExists        = errors.New("an administrator account already exists")
+	ErrLastAdmin          = errors.New("cannot remove the last administrator")
+	ErrInvalidStatus      = errors.New("status must be active or suspended")
 	ErrInvalidBoardSlug   = errors.New("invalid board slug")
 	ErrEmptyBoardName     = errors.New("board name cannot be empty")
 	ErrInvalidBoardStatus = errors.New("board status must be active, read_only, or archived")
@@ -76,6 +75,7 @@ type BoardService interface {
 	GetCommentByID(ctx context.Context, id int) (Comment, error)
 	DeleteComment(ctx context.Context, id int) error
 }
+
 // ChatService provides persistent channel history and independent live-event
 // subscriptions. Consumers may subscribe independently of their current view.
 type UserSession interface {
