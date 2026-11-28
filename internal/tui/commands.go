@@ -70,45 +70,33 @@ func commandCallNoArgs(fn func(*sessionModel)) commandHandler {
 	}
 }
 
-var commandGroupOrder = []string{"General", "Navigation", "Posting", "Administration"}
+var commandGroupOrder = []string{"General", "Navigation", "Posting", "Board", "Topic", "Administration"}
 
 func commandRegistry() []command {
 	return []command{
 		{
 			Name: "help", Aliases: []string{"?"}, Group: "General",
 			Description: "Show available commands or detailed help for a command.",
-			Arguments:   []commandArgument{optionalArgument("command [subcommand]", "Command to describe.")},
-			Handler:     commandCall(func(m *sessionModel, args []string) { m.help(args) }),
+			Arguments: []commandArgument{optionalArgument("command [subcommand]", "Command to describe.")},
+			Handler: commandCall(func(m *sessionModel, args []string) { m.help(args) }),
 		},
 		{
 			Name: "pwd", Group: "Navigation", Description: "Show the current location.",
-			Handler: commandCallNoArgs(func(m *sessionModel) { m.addOutput(m.cwd) }),
+			Handler: commandCallNoArgs(func(m *sessionModel) { m.addOutput(m.currentLocation().Path()) }),
 		},
 		{
-			Name: "ls", Group: "Navigation", Description: "List boards or topics at a location.",
+			Name: "ls", Group: "Navigation", Description: "List entries at a location.",
 			Arguments: []commandArgument{{Name: "path", Description: "Location to list.", Optional: true, Completion: completionLocations}},
-			Handler:   commandCall(func(m *sessionModel, args []string) { m.listLocation(args) }),
+			Handler: commandCall(func(m *sessionModel, args []string) { m.listLocation(args) }),
 		},
 		{
 			Name: "cd", Group: "Navigation", Description: "Change the current location.",
 			Arguments: []commandArgument{{Name: "path", Description: "Destination; use .. for the parent location.", Completion: completionLocations}},
-			Handler:   commandCall(func(m *sessionModel, args []string) { m.changeDirectory(args) }),
+			Handler: commandCall(func(m *sessionModel, args []string) { m.changeDirectory(args) }),
 		},
 		{
-			Name: "recent", Group: "Navigation", Description: "Show recently active topics.",
-			Handler: commandCallNoArgs(func(m *sessionModel) { m.showRecent() }),
-		},
-		{
-			Name: "topics", Group: "Navigation", Description: "List topics in the current board.",
-			Arguments: []commandArgument{{Name: "--page N", Description: "Page number.", Optional: true, Candidates: []string{"--page"}}},
-			Handler:   commandCall(func(m *sessionModel, args []string) { m.listTopics(args) }),
-		},
-		{
-			Name: "show", Group: "Navigation", Description: "Display a topic and its replies.",
-			Arguments: []commandArgument{
-				{Name: "topic-id", Description: "Topic to display; defaults to the current topic.", Optional: true, Completion: completionTopicIDs},
-				{Name: "--page N", Description: "Reply page number.", Optional: true, Candidates: []string{"--page"}},
-			},
+			Name: "show", Group: "Navigation", Description: "Open a topic by ID or display the current topic.",
+			Arguments: []commandArgument{{Name: "topic-id", Description: "Topic to open; defaults to the current topic.", Optional: true, Completion: completionTopicIDs}},
 			Handler: commandCall(func(m *sessionModel, args []string) { m.showCurrent(args) }),
 		},
 		{
@@ -122,22 +110,9 @@ func commandRegistry() []command {
 			Handler: func(m *sessionModel, _ []string) (bool, tea.Cmd) { return false, m.enterChat() },
 		},
 		{
-			Name: "new", Group: "Posting", Description: "Create a topic in the current board.",
-			Handler: commandCallNoArgs(func(m *sessionModel) { m.startNewTopic() }),
-		},
-		{
-			Name: "reply", Group: "Posting", Description: "Reply to the current topic.",
-			Handler: commandCallNoArgs(func(m *sessionModel) { m.startReply() }),
-		},
-		{
-			Name: "delete-topic", Group: "Posting", Description: "Delete a topic you authored.",
-			Arguments: []commandArgument{{Name: "topic-id", Description: "Topic to delete; defaults to the current topic.", Optional: true, Completion: completionTopicIDs}},
-			Handler:   commandCall(func(m *sessionModel, args []string) { m.deleteOwnTopic(args) }),
-		},
-		{
-			Name: "delete-reply", Group: "Posting", Description: "Delete a reply you authored.",
-			Arguments: []commandArgument{argument("reply-id", "Reply to delete.")},
-			Handler:   commandCall(func(m *sessionModel, args []string) { m.deleteOwnReply(args) }),
+			Name: "delete-topic", Group: "Posting", Description: "Delete a topic you authored by ID.",
+			Arguments: []commandArgument{argument("topic-id", "Topic to delete.")},
+			Handler: commandCall(func(m *sessionModel, args []string) { m.deleteOwnTopic(args) }),
 		},
 		{
 			Name: "board", Group: "Administration", Permission: permissionAdmin,
@@ -160,7 +135,7 @@ func commandRegistry() []command {
 		{
 			Name: "users", Group: "Administration", Permission: permissionAdmin,
 			Description: "List registered members.",
-			Handler:     commandCallNoArgs(func(m *sessionModel) { m.listUsers() }),
+			Handler: commandCallNoArgs(func(m *sessionModel) { m.listUsers() }),
 		},
 		{
 			Name: "user", Group: "Administration", Permission: permissionAdmin,
@@ -177,6 +152,39 @@ func commandRegistry() []command {
 				m.addOutput("Disconnecting.")
 				return true, nil
 			},
+		},
+	}
+}
+
+func boardCommands() []command {
+	return []command{
+		{
+			Name: "topics", Group: "Board", Description: "List topics in the current board.",
+			Arguments: []commandArgument{{Name: "--page N", Description: "Page number.", Optional: true, Candidates: []string{"--page"}}},
+			Handler: commandCall(func(m *sessionModel, args []string) { m.listTopics(args) }),
+		},
+		{
+			Name: "new", Group: "Board", Description: "Create a topic in the current board.",
+			Handler: commandCallNoArgs(func(m *sessionModel) { m.startNewTopic() }),
+		},
+	}
+}
+
+func threadCommands() []command {
+	return []command{
+		{
+			Name: "reply", Group: "Topic", Description: "Reply to the current topic.",
+			Handler: commandCallNoArgs(func(m *sessionModel) { m.startReply() }),
+		},
+		{
+			Name: "delete-topic", Group: "Topic", Description: "Delete the current topic or another topic by ID.",
+			Arguments: []commandArgument{optionalArgument("topic-id", "Topic to delete; defaults to the current topic.")},
+			Handler: commandCall(func(m *sessionModel, args []string) { m.deleteOwnTopic(args) }),
+		},
+		{
+			Name: "delete-reply", Group: "Topic", Description: "Delete a reply you authored.",
+			Arguments: []commandArgument{argument("reply-id", "Reply to delete.")},
+			Handler: commandCall(func(m *sessionModel, args []string) { m.deleteOwnReply(args) }),
 		},
 	}
 }
@@ -239,12 +247,71 @@ func commandPermissionName(permission commandPermission) string {
 	}
 }
 
+func (m *sessionModel) contextCommands() []command {
+	commands := commandRegistry()
+	local := m.currentLocation().Commands()
+
+	// Location-local commands shadow same-named global commands. The topic
+	// form of delete-topic defaults to the current topic; the global form
+	// requires an explicit topic ID.
+	for _, scoped := range local {
+		replaced := false
+		for i := range commands {
+			if strings.EqualFold(commands[i].Name, scoped.Name) {
+				commands[i] = scoped
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			commands = append(commands, scoped)
+		}
+	}
+	return commands
+}
+
+func (m *sessionModel) availableCommands() []command {
+	commands := m.contextCommands()
+	visible := make([]command, 0, len(commands))
+	for _, candidate := range commands {
+		if m.hasPermission(candidate.Permission) {
+			visible = append(visible, candidate)
+		}
+	}
+	return visible
+}
+
+func (m *sessionModel) lookupContextCommand(name string) (command, bool) {
+	for _, candidate := range m.contextCommands() {
+		if strings.EqualFold(candidate.Name, name) {
+			return candidate, true
+		}
+		for _, alias := range candidate.Aliases {
+			if strings.EqualFold(alias, name) {
+				return candidate, true
+			}
+		}
+	}
+	return command{}, false
+}
+
+func (m *sessionModel) lookupAvailableCommand(name string) (command, bool) {
+	for _, candidate := range m.availableCommands() {
+		if strings.EqualFold(candidate.Name, name) {
+			return candidate, true
+		}
+		for _, alias := range candidate.Aliases {
+			if strings.EqualFold(alias, name) {
+				return candidate, true
+			}
+		}
+	}
+	return command{}, false
+}
+
 func commandNamesForUser(m *sessionModel) []string {
 	var names []string
-	for _, candidate := range commandRegistry() {
-		if !m.hasPermission(candidate.Permission) {
-			continue
-		}
+	for _, candidate := range m.availableCommands() {
 		names = append(names, candidate.Name)
 		names = append(names, candidate.Aliases...)
 	}
