@@ -46,7 +46,7 @@ func TestCommandAvailabilityFollowsLocation(t *testing.T) {
 	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootLocation{}}
 	rootCommands := commandNamesForContext(member)
 	rootNames := strings.Join(rootCommands, " ")
-	for _, unavailable := range []string{"recent", "topics", "new", "reply", "delete-reply"} {
+	for _, unavailable := range []string{"topics", "new", "reply", "delete-reply"} {
 		if contains(rootCommands, unavailable) {
 			t.Fatalf("root command list includes location-specific command %q: %s", unavailable, rootNames)
 		}
@@ -54,8 +54,8 @@ func TestCommandAvailabilityFollowsLocation(t *testing.T) {
 	if contains(rootCommands, "board") || contains(rootCommands, "invite") {
 		t.Fatalf("member command list includes privileged commands: %s", rootNames)
 	}
-	if !contains(rootCommands, "show") || !contains(rootCommands, "delete-topic") {
-		t.Fatalf("root command list is missing global navigation and ID-based deletion: %s", rootNames)
+	if !contains(rootCommands, "show") || !contains(rootCommands, "delete-topic") || !contains(rootCommands, "recent") {
+		t.Fatalf("root command list is missing global navigation, recent activity, or ID-based deletion: %s", rootNames)
 	}
 
 	member.location = boardLocation{board: service.Board{ID: 1, Slug: "general"}}
@@ -161,7 +161,7 @@ func TestExecuteUsesAvailableHandlersAndPermissions(t *testing.T) {
 func TestCompletionUsesAvailableCommands(t *testing.T) {
 	member := &sessionModel{user: service.User{Role: service.RoleMember}, location: rootLocation{}}
 	rootCommands := member.completionCandidates(nil, "")
-	if !contains(rootCommands, "pwd") || contains(rootCommands, "recent") || contains(rootCommands, "new") || contains(rootCommands, "reply") {
+	if !contains(rootCommands, "pwd") || !contains(rootCommands, "recent") || contains(rootCommands, "new") || contains(rootCommands, "reply") {
 		t.Fatalf("root completion has incorrect commands: %v", rootCommands)
 	}
 
@@ -192,21 +192,19 @@ func TestTypedLocationPathsAndParents(t *testing.T) {
 	root := rootLocation{}
 	boards := boardsLocation{}
 	board := boardLocation{board: service.Board{ID: 4, Slug: "general"}}
-	topicFromBoard := threadLocation{id: 12, parent: board}
-	recent := recentLocation{}
-	topicFromRecent := threadLocation{id: 12, parent: recent}
+	topic := threadLocation{id: 12, parent: board}
 
 	if root.Path() != "/" || boards.Path() != "/boards" || board.Path() != "/boards/general" {
 		t.Fatalf("unexpected base paths: root=%q boards=%q board=%q", root.Path(), boards.Path(), board.Path())
 	}
-	if topicFromBoard.Path() != "/boards/general/12" || topicFromRecent.Path() != "/recent/12" {
-		t.Fatalf("unexpected topic paths: board=%q recent=%q", topicFromBoard.Path(), topicFromRecent.Path())
+	if topic.Path() != "/boards/general/12" {
+		t.Fatalf("unexpected canonical topic path: %q", topic.Path())
 	}
-	if topicFromBoard.Parent().Path() != board.Path() || topicFromRecent.Parent().Path() != recent.Path() {
+	if topic.Parent().Path() != board.Path() {
 		t.Fatal("topic parent was not preserved")
 	}
-	if board.Parent().Path() != boards.Path() || recent.Parent().Path() != root.Path() {
-		t.Fatal("collection parent was not preserved")
+	if board.Parent().Path() != boards.Path() || boards.Parent().Path() != root.Path() {
+		t.Fatal("location ancestry was not preserved")
 	}
 }
 
