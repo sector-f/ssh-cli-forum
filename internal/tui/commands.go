@@ -100,6 +100,10 @@ func commandRegistry() []command {
 			Handler: commandCall(func(m *sessionModel, args []string) { m.showCurrent(args) }),
 		},
 		{
+			Name: "recent", Group: "Navigation", Description: "List recently active topics.",
+			Handler: commandCallNoArgs(func(m *sessionModel) { m.listRecentTopics() }),
+		},
+		{
 			Name: "whoami", Group: "General", Description: "Show your account name, role, and status.",
 			Handler: commandCallNoArgs(func(m *sessionModel) {
 				m.addOutput(fmt.Sprintf("%s (role: %s, status: %s)", m.user.Username, m.user.Role, m.user.Status))
