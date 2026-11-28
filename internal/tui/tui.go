@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,9 +35,10 @@ type sessionModel struct {
 	chat    service.ChatService
 	user    service.User
 
-	cwd    string
-	input  textinput.Model
-	output []string
+	location       *pathNode
+	filesystemRoot *pathNode
+	input          textinput.Model
+	output         []string
 
 	commandHistory []string
 	historyIndex   int
@@ -92,9 +92,10 @@ func NewProgram(sess ssh.Session, userService service.UserService, boardService 
 	if chatService != nil {
 		chatService = appSession
 	}
+	filesystemRoot := &pathNode{object: rootDirectory{}}
 	m := &sessionModel{
 		session: sess, ctx: sess.Context(), users: appSession, boards: appSession, chat: chatService, user: user,
-		cwd: "/", input: input, chatInput: chatInput, chatViewport: chatViewport,
+		location: filesystemRoot, filesystemRoot: filesystemRoot, input: input, chatInput: chatInput, chatViewport: chatViewport,
 		windowWidth: 80, windowHeight: 24,
 		output: []string{
 			"SSH Community",
@@ -493,7 +494,7 @@ func cleanTerminalText(value string) string {
 }
 
 func (m *sessionModel) prompt() string {
-	return m.user.Username + "@community:" + m.cwd + "> "
+	return m.user.Username + "@community:" + m.currentLocation().Path() + "> "
 }
 
 func (m *sessionModel) currentPrompt() string {
@@ -540,7 +541,7 @@ func (m *sessionModel) execute(line string) (bool, tea.Cmd) {
 		return false, nil
 	}
 
-	cmd, ok := lookupCommand(args[0])
+	cmd, ok := m.lookupContextCommand(args[0])
 	if !ok {
 		m.addOutput("Unknown command: " + args[0] + ". Type 'help' for commands.")
 		return false, nil
@@ -591,11 +592,12 @@ func (m *sessionModel) help(args []string) {
 		return
 	}
 
+	available := m.availableCommands()
 	if len(args) == 0 {
 		for _, group := range commandGroupOrder {
 			var entries []string
-			for _, cmd := range commandRegistry() {
-				if cmd.Group != group || !m.hasPermission(cmd.Permission) {
+			for _, cmd := range available {
+				if cmd.Group != group {
 					continue
 				}
 				if len(cmd.Subcommands) > 0 {
@@ -622,13 +624,9 @@ func (m *sessionModel) help(args []string) {
 		return
 	}
 
-	cmd, ok := lookupCommand(args[0])
+	cmd, ok := m.lookupAvailableCommand(args[0])
 	if !ok {
 		m.addOutput("No help available for '" + args[0] + "'.")
-		return
-	}
-	if !m.hasPermission(cmd.Permission) {
-		m.fail(service.ErrPermissionDenied)
 		return
 	}
 
@@ -681,47 +679,87 @@ func (m *sessionModel) writeCommandHelp(cmd command, prefix string) {
 }
 
 func (m *sessionModel) listLocation(args []string) {
-	location := m.cwd
 	if len(args) > 1 {
 		m.addOutput("Usage: ls [path]")
 		return
 	}
+
+	target := m.currentLocation()
 	if len(args) == 1 {
-		if strings.HasPrefix(args[0], "/") {
-			location = path.Clean(args[0])
-		} else {
-			location = path.Clean(path.Join(m.cwd, args[0]))
-		}
-	}
-	switch {
-	case location == "/":
-		m.addOutput("boards/\nrecent\nhelp")
-	case location == "/boards":
-		boards, err := m.boards.ListBoards(m.ctx)
+		resolved, err := m.filesystem().Resolve(m.currentLocation(), args[0])
 		if err != nil {
 			m.fail(err)
 			return
 		}
-		m.printBoards(boards)
-	case location == "/recent":
-		m.showRecent()
-	case strings.HasPrefix(location, "/boards/"):
-		parts := strings.Split(strings.TrimPrefix(location, "/boards/"), "/")
-		if len(parts) == 1 && parts[0] != "" {
-			m.printBoardTopics(parts[0], 1)
-		} else if len(parts) == 2 {
-			id, err := strconv.Atoi(parts[1])
-			if err != nil {
-				m.fail(service.ErrThreadNotFound)
-				return
-			}
-			m.displayThread(id, 1)
-		} else {
-			m.addOutput("No such location: " + location)
-		}
-	default:
-		m.addOutput("No such location: " + location)
+		target = resolved
 	}
+	m.displayLocation(target)
+}
+
+func (m *sessionModel) displayLocation(target *pathNode) {
+	switch object := target.object.(type) {
+	case rootDirectory:
+		children, err := m.filesystem().Children(target)
+		if err != nil {
+			m.fail(err)
+			return
+		}
+		for _, child := range children {
+			name := child.name
+			if isDirectory(child.object) {
+				name += "/"
+			}
+			m.addOutput(name)
+		}
+	case boardsDirectory:
+		children, err := m.filesystem().Children(target)
+		if err != nil {
+			m.fail(err)
+			return
+		}
+		boards := make([]service.BoardListing, 0, len(children))
+		for _, child := range children {
+			board, ok := child.object.(boardObject)
+			if !ok {
+				continue
+			}
+			boards = append(boards, service.BoardListing{
+				ID: board.board.ID, Slug: board.board.Slug, Name: board.board.Name,
+				Description: board.board.Description, Status: board.board.Status,
+			})
+		}
+		m.printBoards(boards)
+	case boardObject:
+		m.printBoardTopics(object.board.Slug, 1)
+	case topicObject:
+		m.displayThread(object.id, 1)
+	default:
+		m.addOutput("No such location.")
+	}
+}
+
+const recentTopicLimit = 100
+
+func (m *sessionModel) listRecentTopics() {
+	threads, err := m.boards.RecentThreads(m.ctx, recentTopicLimit)
+	if err != nil {
+		m.fail(err)
+		return
+	}
+	if len(threads) == 0 {
+		m.addOutput("No recent topics.")
+		return
+	}
+	m.addOutput("RECENT ACTIVITY")
+	m.addOutput("ID    TOPIC                                            REPLIES  LAST ACTIVITY")
+	for _, thread := range threads {
+		title := thread.Title
+		if len(title) > 46 {
+			title = title[:43] + "..."
+		}
+		m.addOutput(fmt.Sprintf("%-4d  %-46s %7d  %s", thread.ID, title, thread.ReplyCount, relativeTime(thread.LastActivityAt)))
+	}
+	m.addOutput("Use 'show <topic-id>' to open a topic.")
 }
 
 func (m *sessionModel) printBoards(boards []service.BoardListing) {
@@ -755,18 +793,13 @@ func (m *sessionModel) printBoardTopics(slug string, page int) {
 }
 
 func (m *sessionModel) listTopics(args []string) {
-	parts := strings.Split(strings.TrimPrefix(m.cwd, "/boards/"), "/")
-	if !strings.HasPrefix(m.cwd, "/boards/") || len(parts) != 1 || parts[0] == "" {
-		m.addOutput("'topics' must be run from inside a board.")
+	board, ok := m.currentBoard()
+	if !ok {
+		m.addOutput("'topics' is only available inside a board.")
 		return
 	}
 	page := pageArgument(args)
-	board, err := m.boards.GetBoardBySlug(m.ctx, parts[0])
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	threads, total, err := m.boards.ListThreadsPage(m.ctx, board.ID, page, 20)
+	threads, total, err := m.boards.ListThreadsPage(m.ctx, board.board.ID, page, 20)
 	if err != nil {
 		m.fail(err)
 		return
@@ -795,37 +828,16 @@ func (m *sessionModel) printThreadList(threads []service.ThreadListing, page, to
 	m.addOutput(fmt.Sprintf("Showing %d-%d of %d. Use 'topics --page %d' for more.", start, end, total, page+1))
 }
 
-func (m *sessionModel) showRecent() {
-	threads, err := m.boards.RecentThreads(m.ctx, 20)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	if len(threads) == 0 {
-		m.addOutput("No recent topics.")
-		return
-	}
-	m.addOutput("RECENT ACTIVITY")
-	m.addOutput("ID    TOPIC                                            REPLIES  LAST ACTIVITY")
-	for _, t := range threads {
-		title := t.Title
-		if len(title) > 46 {
-			title = title[:43] + "..."
-		}
-		m.addOutput(fmt.Sprintf("%-4d  %-46s %7d  %s", t.ID, title, t.ReplyCount, relativeTime(t.LastActivityAt)))
-	}
-	m.addOutput("Use 'cd /boards/<board-slug>/<topic-id>' to open a topic.")
-}
+
 
 func (m *sessionModel) showCurrent(args []string) {
-	id, err := m.currentThreadID(args)
-	if err != nil {
-		m.fail(err)
-		return
-	}
-	// An explicit topic ID is a navigation action too: establish its board/topic
-	// context so subsequent commands such as 'reply' work without another cd.
+	page := pageArgument(args)
 	if len(args) > 0 && args[0] != "--page" {
+		id, err := strconv.Atoi(args[0])
+		if err != nil {
+			m.fail(fmt.Errorf("expected a topic ID"))
+			return
+		}
 		thread, err := m.boards.GetThreadByID(m.ctx, id)
 		if err != nil {
 			m.fail(err)
@@ -836,9 +848,23 @@ func (m *sessionModel) showCurrent(args []string) {
 			m.fail(err)
 			return
 		}
-		m.cwd = path.Join("/boards", board.Slug, strconv.Itoa(id))
+		// An explicit topic ID navigates through its canonical filesystem path.
+		target, err := m.filesystem().Resolve(m.filesystem().Root(), fmt.Sprintf("/boards/%s/%d", board.Slug, id))
+		if err != nil {
+			m.fail(err)
+			return
+		}
+		m.location = target
+		m.displayThread(id, page)
+		return
 	}
-	m.displayThread(id, pageArgument(args))
+
+	current, ok := m.currentTopic()
+	if !ok {
+		m.fail(fmt.Errorf("show requires a topic ID unless already inside a topic"))
+		return
+	}
+	m.displayThread(current.id, page)
 }
 
 func (m *sessionModel) displayThread(id, page int) {
@@ -873,93 +899,29 @@ func (m *sessionModel) displayThread(id, page int) {
 	}
 }
 
-func (m *sessionModel) currentThreadID(args []string) (int, error) {
-	if len(args) > 0 && args[0] != "--page" {
-		id, err := strconv.Atoi(args[0])
-		if err != nil {
-			return 0, errors.New("expected a topic ID")
-		}
-		return id, nil
-	}
-	if !strings.HasPrefix(m.cwd, "/boards/") {
-		return 0, errors.New("this command must be run from a topic")
-	}
-	parts := strings.Split(m.cwd, "/")
-	if len(parts) != 4 {
-		return 0, errors.New("this command must be run from a topic")
-	}
-	id, err := strconv.Atoi(parts[3])
-	return id, err
-}
+
 
 func (m *sessionModel) changeDirectory(args []string) {
 	if len(args) != 1 {
 		m.addOutput("Usage: cd <path>")
 		return
 	}
-	target := args[0]
-	if !strings.HasPrefix(target, "/") {
-		target = path.Join(m.cwd, target)
+	target, err := m.filesystem().Resolve(m.currentLocation(), args[0])
+	if err != nil {
+		m.fail(err)
+		return
 	}
-	target = path.Clean(target)
-	switch {
-	case target == "/", target == "/boards", target == "/recent":
-		m.cwd = target
-		if target == "/boards" {
-			if b, err := m.boards.ListBoards(m.ctx); err == nil {
-				m.printBoards(b)
-			}
-		}
-		if target == "/recent" {
-			m.showRecent()
-		}
-	case strings.HasPrefix(target, "/boards/"):
-		parts := strings.Split(strings.TrimPrefix(target, "/boards/"), "/")
-		if len(parts) == 1 && parts[0] != "" {
-			b, err := m.boards.GetBoardBySlug(m.ctx, parts[0])
-			if err != nil {
-				m.fail(err)
-				return
-			}
-			m.cwd = target
-			m.addOutput(fmt.Sprintf("%s — %s", b.Name, b.Description))
-			m.listTopics(nil)
-		} else if len(parts) == 2 && parts[0] != "" {
-			id, err := strconv.Atoi(parts[1])
-			if err != nil {
-				m.addOutput("Invalid topic ID.")
-				return
-			}
-			t, err := m.boards.GetThreadByID(m.ctx, id)
-			if err != nil {
-				m.fail(err)
-				return
-			}
-			b, err := m.boards.GetBoardByID(m.ctx, t.BoardID)
-			if err != nil {
-				m.fail(err)
-				return
-			}
-			if b.Slug != parts[0] {
-				m.addOutput("Topic does not belong to this board.")
-				return
-			}
-			m.cwd = target
-			m.displayThread(id, 1)
-		} else {
-			m.addOutput("No such location: " + target)
-		}
-	default:
-		m.addOutput("No such location: " + target)
-	}
+	m.location = target
+	m.displayLocation(target)
 }
 
 func (m *sessionModel) startNewTopic() {
-	if !strings.HasPrefix(m.cwd, "/boards/") || strings.Count(m.cwd, "/") != 2 {
-		m.addOutput("'new' must be run from inside a board.")
+	currentBoard, ok := m.currentBoard()
+	if !ok {
+		m.addOutput("'new' is only available inside a board.")
 		return
 	}
-	board, err := m.boards.GetBoardBySlug(m.ctx, strings.TrimPrefix(m.cwd, "/boards/"))
+	board, err := m.boards.GetBoardByID(m.ctx, currentBoard.board.ID)
 	if err != nil {
 		m.fail(err)
 		return
@@ -975,18 +937,17 @@ func (m *sessionModel) startNewTopic() {
 }
 
 func (m *sessionModel) startReply() {
-	id, err := m.currentThreadID(nil)
-	if err != nil {
-		m.fail(errors.New("'reply' must be run from inside a topic"))
+	thread, ok := m.currentTopic()
+	if !ok {
+		m.addOutput("'reply' is only available inside a topic.")
 		return
 	}
-	_, err = m.boards.GetThreadByID(m.ctx, id)
-	if err != nil {
+	if _, err := m.boards.GetThreadByID(m.ctx, thread.id); err != nil {
 		m.fail(err)
 		return
 	}
 	m.compose = composeReplyBody
-	m.draftThreadID = id
+	m.draftThreadID = thread.id
 	m.draftLines = nil
 	m.addOutput("Reply body. Enter a single '.' on a line to post; use /cancel to abort.")
 	m.input.Prompt = m.currentPrompt()
@@ -1024,17 +985,28 @@ func (m *sessionModel) finishComposition() {
 	body := strings.Join(m.draftLines, "\n")
 	switch m.compose {
 	case composeNewBody:
-		id, err := m.currentBoardID()
-		if err == nil {
-			var threadID int
-			threadID, err = m.boards.CreateThreadWithBody(m.ctx, m.draftTitle, body, id, m.user.ID)
-			if err == nil {
-				m.addOutput(fmt.Sprintf("Topic created: #%d", threadID))
-				m.cwd = path.Join(m.cwd, strconv.Itoa(threadID))
-				m.displayThread(threadID, 1)
-			}
+		board, ok := m.currentBoard()
+		if !ok {
+			m.fail(fmt.Errorf("new is only available inside a board"))
+			break
 		}
-		m.fail(err)
+		threadID, err := m.boards.CreateThreadWithBody(m.ctx, m.draftTitle, body, board.board.ID, m.user.ID)
+		if err != nil {
+			m.fail(err)
+			break
+		}
+		if _, err := m.boards.GetThreadByID(m.ctx, threadID); err != nil {
+			m.fail(err)
+			break
+		}
+		m.addOutput(fmt.Sprintf("Topic created: #%d", threadID))
+		target, err := m.filesystem().Resolve(m.currentLocation(), strconv.Itoa(threadID))
+		if err != nil {
+			m.fail(err)
+			return
+		}
+		m.location = target
+		m.displayThread(threadID, 1)
 	case composeReplyBody:
 		err := m.boards.CreateComment(m.ctx, m.draftThreadID, m.user.ID, body)
 		if err != nil {
@@ -1058,17 +1030,7 @@ func (m *sessionModel) cancelComposition() {
 	m.resetComposition()
 }
 
-func (m *sessionModel) currentBoardID() (int, error) {
-	if !strings.HasPrefix(m.cwd, "/boards/") {
-		return 0, errors.New("not currently in a board")
-	}
-	slug := strings.TrimPrefix(m.cwd, "/boards/")
-	if strings.Contains(slug, "/") {
-		return 0, errors.New("not currently in a board")
-	}
-	board, err := m.boards.GetBoardBySlug(m.ctx, slug)
-	return board.ID, err
-}
+
 
 func (m *sessionModel) deleteOwnTopic(args []string) {
 	id, err := m.targetID(args)
@@ -1081,8 +1043,8 @@ func (m *sessionModel) deleteOwnTopic(args []string) {
 		return
 	}
 	m.addOutput("Topic deleted.")
-	if strings.HasSuffix(m.cwd, "/"+strconv.Itoa(id)) {
-		m.cwd = path.Dir(m.cwd)
+	if current, ok := m.currentTopic(); ok && current.id == id {
+		m.location = m.currentLocation().Parent()
 	}
 }
 
@@ -1113,9 +1075,12 @@ func (m *sessionModel) targetID(args []string) (int, error) {
 		}
 	}
 	if len(args) == 0 {
-		return m.currentThreadID(nil)
+		if current, ok := m.currentTopic(); ok {
+			return current.id, nil
+		}
+		return 0, fmt.Errorf("delete-topic requires a topic ID outside a topic location")
 	}
-	return 0, errors.New("usage: delete-topic [topic-id]")
+	return 0, fmt.Errorf("usage: delete-topic [topic-id]")
 }
 
 func pageArgument(args []string) int {

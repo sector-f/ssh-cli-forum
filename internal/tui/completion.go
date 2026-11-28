@@ -60,10 +60,10 @@ func completionContext(line string, cursor int) ([]string, string, int, bool) {
 
 func (m *sessionModel) completionCandidates(before []string, prefix string) []string {
 	if len(before) == 0 {
-		return matchingCandidates(commandNamesForUser(m), prefix)
+		return matchingCandidates(commandNamesForContext(m), prefix)
 	}
 
-	cmd, ok := lookupCommand(before[0])
+	cmd, ok := m.lookupAvailableCommand(before[0])
 	if !ok || !m.hasPermission(cmd.Permission) {
 		return nil
 	}
@@ -111,49 +111,23 @@ func (m *sessionModel) completionCandidates(before []string, prefix string) []st
 }
 
 func (m *sessionModel) locationCandidates(prefix string) []string {
-	boards, err := m.boards.ListBoards(m.ctx)
+	if strings.HasPrefix(prefix, "/") {
+		return m.filesystem().Paths()
+	}
+
+	entries, err := m.filesystem().Children(m.currentLocation())
 	if err != nil {
 		return nil
 	}
-
-	absolute := []string{"/", "/boards", "/recent"}
-	for _, board := range boards {
-		base := "/boards/" + board.Slug
-		absolute = append(absolute, base+"/")
-		if topics, _, err := m.boards.ListThreadsPage(m.ctx, board.ID, 1, 50); err == nil {
-			for _, topic := range topics {
-				absolute = append(absolute, base+"/"+strconv.Itoa(topic.ID))
-			}
+	candidates := []string{".."}
+	for _, entry := range entries {
+		name := entry.name
+		if isDirectory(entry.object) {
+			name += "/"
 		}
+		candidates = append(candidates, name)
 	}
-	if strings.HasPrefix(prefix, "/") {
-		return absolute
-	}
-
-	relative := []string{".."}
-	switch {
-	case m.cwd == "/":
-		relative = append(relative, "boards/", "recent")
-	case m.cwd == "/boards":
-		for _, board := range boards {
-			relative = append(relative, board.Slug+"/")
-		}
-	case strings.HasPrefix(m.cwd, "/boards/") && strings.Count(m.cwd, "/") == 2:
-		slug := strings.TrimPrefix(m.cwd, "/boards/")
-		for _, board := range boards {
-			if board.Slug != slug {
-				continue
-			}
-			topics, _, err := m.boards.ListThreadsPage(m.ctx, board.ID, 1, 50)
-			if err != nil {
-				break
-			}
-			for _, topic := range topics {
-				relative = append(relative, strconv.Itoa(topic.ID))
-			}
-		}
-	}
-	return append(absolute, relative...)
+	return candidates
 }
 
 func (m *sessionModel) boardSlugs() []string {
@@ -195,7 +169,7 @@ func (m *sessionModel) inviteCodes() []string {
 }
 
 func (m *sessionModel) topicIDs() []string {
-	topics, err := m.boards.RecentThreads(m.ctx, 100)
+	topics, err := m.boards.RecentThreads(m.ctx, recentTopicLimit)
 	if err != nil {
 		return nil
 	}

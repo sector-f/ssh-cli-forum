@@ -42,7 +42,7 @@ The main interface is command-oriented and does not use Bubble Tea's alternate s
 - `/boards/<slug>/<topic-id>` displays a topic and its replies.
 - `new` creates a topic from inside a board.
 - `reply` adds a reply from inside a topic.
-- `recent` lists recently active topics.
+- `recent` lists recently active topics; use `show <topic-id>` to open one at its canonical board path.
 - `chat` opens the persistent global chat. Enter a message to post and use `/leave` to return to forum navigation. The most recent 100 messages are loaded on entry; the mouse wheel scrolls history.
 - `help` lists available commands and permissions.
 
