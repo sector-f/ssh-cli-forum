@@ -142,6 +142,9 @@ type topicObject struct {
 
 func (topicObject) Commands() []command { return threadCommands() }
 
+// Resolve interprets paths by traversing directory-provided lookups. Relative
+// paths are anchored at the supplied path node; absolute paths start at root.
+
 func (m *sessionModel) currentLocation() *pathNode {
 	if m.location == nil {
 		return m.filesystem().Root()
@@ -172,8 +175,6 @@ func (m *sessionModel) filesystem() virtualFilesystem {
 	return virtualFilesystem{model: m, root: m.filesystemRoot}
 }
 
-// Resolve interprets paths by traversing directory-provided lookups. Relative
-// paths are anchored at the supplied path node; absolute paths start at root.
 
 func (fs virtualFilesystem) Root() *pathNode {
 	if fs.root != nil {
