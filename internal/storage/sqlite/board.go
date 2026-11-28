@@ -56,18 +56,6 @@ func (s *Store) getBoard(ctx context.Context, column string, value interface{}) 
 	return b, nil
 }
 
-func (s *Store) UpdateBoard(ctx context.Context, slug, name, description string) error {
-	res, err := s.db.ExecContext(ctx, "UPDATE boards SET name = ?, description = ?, updated_at = ? WHERE slug = ?", name, description, nowText(), slug)
-	if err != nil {
-		return err
-	}
-	n, err := res.RowsAffected()
-	if err == nil && n == 0 {
-		return service.ErrBoardNotFound
-	}
-	return err
-}
-
 func (s *Store) SetBoardStatus(ctx context.Context, slug, status string) error {
 	res, err := s.db.ExecContext(ctx, "UPDATE boards SET status = ?, updated_at = ? WHERE slug = ?", status, nowText(), slug)
 	if err != nil {

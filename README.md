@@ -43,12 +43,12 @@ The main interface is command-oriented and does not use Bubble Tea's alternate s
 - `new` creates a topic from inside a board.
 - `reply` adds a reply from inside a topic.
 - `recent` lists recently active topics.
-- `chat` opens the persistent global chat. In chat, enter a message to post, use `/me <action>` for an action message, and `/leave` to return to forum navigation. The most recent 100 messages are loaded on entry; the mouse wheel scrolls history.
+- `chat` opens the persistent global chat. Enter a message to post and use `/leave` to return to forum navigation. The most recent 100 messages are loaded on entry; the mouse wheel scrolls history.
 - `help` lists available commands and permissions.
 
 Multi-line post bodies end with a line containing a single period. Enter `/cancel` to abort. Enter `..` to include a literal period on its own line.
 
-Members can edit and delete their own content. Moderators can lock, hide, restore, pin, unpin, and remove topics or replies. Administrators can manage boards, invitations, account roles, and account status.
+Members can create topics and replies and delete their own topics and replies. Administrators can create and archive boards, create and revoke invitations, list users, and suspend or reactivate accounts.
 
 There is intentionally no `members` or `search` command in this initial version.
 
@@ -65,19 +65,15 @@ forumctl --db PATH admin bootstrap --username NAME --public-key-file KEY
 
 forumctl --db PATH board create SLUG NAME [DESCRIPTION]
 forumctl --db PATH board list
-forumctl --db PATH board update SLUG NAME DESCRIPTION
 forumctl --db PATH board archive SLUG
-forumctl --db PATH board restore SLUG
 
-forumctl --db PATH invite create [--expires-in 168h] [--admin]
+forumctl --db PATH invite create [--expires-in 168h]
 forumctl --db PATH invite list
 forumctl --db PATH invite revoke CODE
 
 forumctl --db PATH user list
-forumctl --db PATH user set-role USERNAME member|moderator|admin
 forumctl --db PATH user suspend USERNAME
 forumctl --db PATH user activate USERNAME
-forumctl --db PATH modlog
 ```
 
-The server and normal `forumctl` operations apply pending schema upgrades. `forumctl db status` reports applied versions without changing the schema. Existing databases from the earlier prototype are upgraded in place; users, SSH keys, invitations, boards, topics, and replies are preserved. Backups use SQLite's online `VACUUM INTO` operation.
+The server and normal `forumctl` operations apply pending Goose SQL migrations. Migration files are embedded in the application; add future migrations under `internal/storage/sqlite/migrations/` using Goose's numbered SQL format. `forumctl db status` reports applied versions without applying pending migrations. This branch starts with a fresh initial schema and does not upgrade databases from the earlier prototype; create a new database with `forumctl db migrate`. Backups use SQLite's online `VACUUM INTO` operation.

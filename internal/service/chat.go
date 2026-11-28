@@ -10,13 +10,6 @@ const (
 	ChatMessageMaxLength = 1000
 )
 
-type ChatMessageKind string
-
-const (
-	ChatMessageText   ChatMessageKind = "text"
-	ChatMessageAction ChatMessageKind = "action"
-)
-
 var (
 	ErrChatChannelNotFound = errors.New("chat channel not found")
 	ErrChatMessageEmpty    = errors.New("chat message cannot be empty")
@@ -31,7 +24,6 @@ type ChatMessage struct {
 	ChannelSlug string
 	UserID      int
 	Username    string
-	Kind        ChatMessageKind
 	Text        string
 	Timestamp   time.Time
 }
@@ -39,9 +31,6 @@ type ChatMessage struct {
 func (m ChatMessage) Time() time.Time { return m.Timestamp }
 
 func (m ChatMessage) DisplayText() string {
-	if m.Kind == ChatMessageAction {
-		return "* " + m.Username + " " + m.Text
-	}
 	return m.Username + ": " + m.Text
 }
 

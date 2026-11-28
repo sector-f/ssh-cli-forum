@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"time"
-
 )
 
 const SignupUsername = "signup"
@@ -22,20 +21,17 @@ var (
 	ErrInviteInvalid = errors.New("invalid invite code")
 	ErrInviteRevoked = errors.New("invite code has been revoked")
 
-	ErrBoardNotFound    = errors.New("board not found")
-	ErrThreadNotFound   = errors.New("topic not found")
-	ErrCommentNotFound  = errors.New("reply not found")
-	ErrPermissionDenied = errors.New("permission denied")
-	ErrReadOnly         = errors.New("this board is read-only")
-	ErrThreadLocked     = errors.New("this topic is locked")
-	ErrAdminExists      = errors.New("an administrator account already exists")
-	ErrLastAdmin        = errors.New("cannot remove the last administrator")
-	ErrInvalidRole      = errors.New("role must be member, moderator, or admin")
-	ErrInvalidStatus       = errors.New("status must be active or suspended")
+	ErrBoardNotFound      = errors.New("board not found")
+	ErrThreadNotFound     = errors.New("topic not found")
+	ErrCommentNotFound    = errors.New("reply not found")
+	ErrPermissionDenied   = errors.New("permission denied")
+	ErrReadOnly           = errors.New("this board is read-only")
+	ErrAdminExists        = errors.New("an administrator account already exists")
+	ErrLastAdmin          = errors.New("cannot remove the last administrator")
+	ErrInvalidStatus      = errors.New("status must be active or suspended")
 	ErrInvalidBoardSlug   = errors.New("invalid board slug")
 	ErrEmptyBoardName     = errors.New("board name cannot be empty")
 	ErrInvalidBoardStatus = errors.New("board status must be active, read_only, or archived")
-	ErrInvalidThreadStatus = errors.New("invalid topic status")
 	ErrEmptyThreadTitle   = errors.New("topic title cannot be empty")
 	ErrEmptyCommentBody   = errors.New("reply cannot be empty")
 
@@ -43,13 +39,12 @@ var (
 )
 
 type AccountStore interface {
-	CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error
+	CreateInvite(ctx context.Context, code string, expiresAt time.Time) error
 	GetInvite(ctx context.Context, code string) (Invite, error)
 	CreateUser(ctx context.Context, username string, pubKey []byte, inviteCode, role string) error
 	BootstrapAdmin(ctx context.Context, username string, pubKey []byte) error
 	GetUserByUsername(ctx context.Context, username string) (User, error)
 	ListUsers(ctx context.Context) ([]User, error)
-	SetUserRole(ctx context.Context, username, role string) error
 	SetUserStatus(ctx context.Context, username, status string) error
 }
 
@@ -62,7 +57,6 @@ type UserService interface {
 }
 type BoardAdminStore interface {
 	CreateBoardWithDetails(ctx context.Context, slug, name, description string, sortOrder, createdBy int) error
-	UpdateBoard(ctx context.Context, slug, name, description string) error
 	SetBoardStatus(ctx context.Context, slug, status string) error
 }
 
@@ -76,16 +70,12 @@ type BoardService interface {
 	CreateThreadWithBody(ctx context.Context, title, body string, boardID, authorID int) (int, error)
 	ListThreadsPage(ctx context.Context, boardID, page, pageSize int) ([]ThreadListing, int, error)
 	RecentThreads(ctx context.Context, limit int) ([]ThreadListing, error)
-	UpdateThread(ctx context.Context, id int, title, body string) error
-	DeleteThread(ctx context.Context, id, actorID int, reason string) error
-	SetThreadPinned(ctx context.Context, id, actorID int, pinned bool, reason string) error
-	SetThreadStatus(ctx context.Context, id, actorID int, status, reason string) error
+	DeleteThread(ctx context.Context, id int) error
 	ListCommentsPage(ctx context.Context, threadID, page, pageSize int) ([]Comment, int, error)
 	GetCommentByID(ctx context.Context, id int) (Comment, error)
-	UpdateComment(ctx context.Context, id int, body string) error
-	DeleteComment(ctx context.Context, id, actorID int, reason string) error
-	ListModerationLog(ctx context.Context, limit int) ([]ModerationEntry, error)
+	DeleteComment(ctx context.Context, id int) error
 }
+
 // ChatService provides persistent channel history and independent live-event
 // subscriptions. Consumers may subscribe independently of their current view.
 type UserSession interface {
@@ -94,8 +84,7 @@ type UserSession interface {
 	ListInvites(ctx context.Context) ([]Invite, error)
 	RevokeInvite(ctx context.Context, code string) error
 	ListUsers(ctx context.Context) ([]User, error)
-	CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error
-	SetUserRole(ctx context.Context, username, role string) error
+	CreateInvite(ctx context.Context, code string, expiresAt time.Time) error
 	SetUserStatus(ctx context.Context, username, status string) error
 }
 
@@ -107,7 +96,7 @@ type BoardSession interface {
 
 type ChatStore interface {
 	RecentMessages(ctx context.Context, channelSlug string, limit int) ([]ChatMessage, error)
-	PostMessage(ctx context.Context, channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error)
+	PostMessage(ctx context.Context, channelSlug string, userID int, body string) (ChatMessage, error)
 }
 
 type ChatService interface {

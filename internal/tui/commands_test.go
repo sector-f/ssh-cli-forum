@@ -17,7 +17,6 @@ func TestCommandRegistryMetadata(t *testing.T) {
 			t.Errorf("duplicate command name %q", cmd.Name)
 		}
 		seen[strings.ToLower(cmd.Name)] = true
-
 		if len(cmd.Subcommands) == 0 && cmd.Handler == nil {
 			t.Errorf("command %q has no handler", cmd.Name)
 		}
@@ -37,22 +36,28 @@ func TestCommandRegistryMetadata(t *testing.T) {
 
 func TestCommandPermissionsDriveVisibility(t *testing.T) {
 	member := &sessionModel{user: service.User{Role: service.RoleMember}}
-	moderator := &sessionModel{user: service.User{Role: service.RoleModerator}}
 	admin := &sessionModel{user: service.User{Role: service.RoleAdmin}}
 
 	memberNames := strings.Join(commandNamesForUser(member), " ")
-	if strings.Contains(memberNames, "lock") || strings.Contains(memberNames, "board") || strings.Contains(memberNames, "invite") {
+	for _, removed := range []string{"edit-topic", "edit-reply", "profile", "lock", "pin", "hide-thread", "modlog", "role"} {
+		if strings.Contains(memberNames, removed) {
+			t.Fatalf("member command list includes deferred command %q: %s", removed, memberNames)
+		}
+	}
+	if strings.Contains(memberNames, "board") || strings.Contains(memberNames, "invite") {
 		t.Fatalf("member command list includes privileged commands: %s", memberNames)
 	}
 
-	moderatorNames := strings.Join(commandNamesForUser(moderator), " ")
-	if !strings.Contains(moderatorNames, "lock") || strings.Contains(moderatorNames, "board") {
-		t.Fatalf("moderator command list has incorrect permissions: %s", moderatorNames)
-	}
-
 	adminNames := strings.Join(commandNamesForUser(admin), " ")
-	if !strings.Contains(adminNames, "board") || !strings.Contains(adminNames, "invite") || !strings.Contains(adminNames, "lock") {
-		t.Fatalf("administrator command list is missing commands: %s", adminNames)
+	for _, retained := range []string{"board", "invite", "users", "user"} {
+		if !strings.Contains(adminNames, retained) {
+			t.Fatalf("administrator command list is missing %q: %s", retained, adminNames)
+		}
+	}
+	for _, removed := range []string{"lock", "pin", "hide-thread", "modlog", "edit-topic", "edit-reply"} {
+		if strings.Contains(adminNames, removed) {
+			t.Fatalf("administrator command list includes deferred command %q: %s", removed, adminNames)
+		}
 	}
 }
 
@@ -63,8 +68,8 @@ func TestHelpIsGeneratedFromCommandRegistry(t *testing.T) {
 	if !strings.Contains(memberHelp, "cd <path>") || !strings.Contains(memberHelp, "reply") {
 		t.Fatalf("member help is missing ordinary commands:\n%s", memberHelp)
 	}
-	if strings.Contains(memberHelp, "lock <topic-id>") || strings.Contains(memberHelp, "board create") {
-		t.Fatalf("member help exposes privileged commands:\n%s", memberHelp)
+	if strings.Contains(memberHelp, "lock") || strings.Contains(memberHelp, "board create") || strings.Contains(memberHelp, "edit-topic") {
+		t.Fatalf("member help exposes deferred or privileged commands:\n%s", memberHelp)
 	}
 
 	admin := &sessionModel{user: service.User{Role: service.RoleAdmin}}
@@ -82,9 +87,9 @@ func TestExecuteUsesRegisteredHandlerAndPermissions(t *testing.T) {
 		t.Fatalf("pwd dispatch failed: quit=%t output=%v", quit, member.output)
 	}
 
-	quit, _ = member.execute("lock 42")
+	quit, _ = member.execute("board list")
 	if quit || !strings.Contains(strings.Join(member.output, "\n"), service.ErrPermissionDenied.Error()) {
-		t.Fatalf("moderator command was not denied: quit=%t output=%v", quit, member.output)
+		t.Fatalf("administrator command was not denied: quit=%t output=%v", quit, member.output)
 	}
 
 	quit, _ = member.execute("quit")
@@ -96,7 +101,7 @@ func TestExecuteUsesRegisteredHandlerAndPermissions(t *testing.T) {
 func TestCompletionUsesRegistryMetadata(t *testing.T) {
 	member := &sessionModel{user: service.User{Role: service.RoleMember}}
 	memberCommands := member.completionCandidates(nil, "")
-	if !contains(memberCommands, "pwd") || contains(memberCommands, "lock") || contains(memberCommands, "board") {
+	if !contains(memberCommands, "pwd") || contains(memberCommands, "lock") || contains(memberCommands, "board") || contains(memberCommands, "edit-topic") {
 		t.Fatalf("member completion has incorrect commands: %v", memberCommands)
 	}
 
@@ -106,8 +111,8 @@ func TestCompletionUsesRegistryMetadata(t *testing.T) {
 		t.Fatalf("admin completion is missing privileged commands: %v", adminCommands)
 	}
 	subcommands := admin.completionCandidates([]string{"board"}, "")
-	if !contains(subcommands, "create") || !contains(subcommands, "archive") {
-		t.Fatalf("admin completion is missing board subcommands: %v", subcommands)
+	if !contains(subcommands, "create") || !contains(subcommands, "archive") || contains(subcommands, "restore") {
+		t.Fatalf("admin completion has incorrect board subcommands: %v", subcommands)
 	}
 }
 

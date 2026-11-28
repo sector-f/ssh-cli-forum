@@ -2,9 +2,7 @@ package sqlite
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -12,13 +10,13 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func (s *Store) CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO invites (code, created_at, expires_at, is_admin) VALUES (?, ?, ?, ?)", code, nowText(), expiresAt.UTC().Format(time.RFC3339Nano), isAdmin)
+func (s *Store) CreateInvite(ctx context.Context, code string, expiresAt time.Time) error {
+	_, err := s.db.ExecContext(ctx, "INSERT INTO invites (code, created_at, expires_at) VALUES (?, ?, ?)", code, nowText(), expiresAt.UTC().Format(time.RFC3339Nano))
 	return err
 }
 
 func (s *Store) ListInvites(ctx context.Context) ([]service.Invite, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT i.code, i.created_at, i.expires_at, i.is_admin, COALESCE(u.username, ''),
+	rows, err := s.db.QueryContext(ctx, `SELECT i.code, i.created_at, i.expires_at, COALESCE(u.username, ''),
 		COALESCE(u.created_at, ''), COALESCE(i.revoked_at, '')
 		FROM invites i LEFT JOIN users u ON u.invite_code = i.code ORDER BY i.created_at DESC`)
 	if err != nil {
@@ -29,7 +27,7 @@ func (s *Store) ListInvites(ctx context.Context) ([]service.Invite, error) {
 	for rows.Next() {
 		var i service.Invite
 		var created, expires, redeemed, revoked string
-		if err := rows.Scan(&i.Code, &created, &expires, &i.IsAdmin, &i.RedeemedBy, &redeemed, &revoked); err != nil {
+		if err := rows.Scan(&i.Code, &created, &expires, &i.RedeemedBy, &redeemed, &revoked); err != nil {
 			return nil, err
 		}
 		i.CreatedAt, i.ExpiresAt = parseTime(created), parseTime(expires)
@@ -42,8 +40,8 @@ func (s *Store) ListInvites(ctx context.Context) ([]service.Invite, error) {
 func (s *Store) GetInvite(ctx context.Context, code string) (service.Invite, error) {
 	var i service.Invite
 	var created, expires, revoked sql.NullString
-	err := s.db.QueryRowContext(ctx, "SELECT code, created_at, expires_at, is_admin, revoked_at FROM invites WHERE code = ?", code).
-		Scan(&i.Code, &created, &expires, &i.IsAdmin, &revoked)
+	err := s.db.QueryRowContext(ctx, "SELECT code, created_at, expires_at, revoked_at FROM invites WHERE code = ?", code).
+		Scan(&i.Code, &created, &expires, &revoked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.Invite{}, service.ErrInviteInvalid
 	}
@@ -78,12 +76,4 @@ func (s *Store) RevokeInvite(ctx context.Context, code string) error {
 		}
 	}
 	return err
-}
-
-func randomToken(bytes int) (string, error) {
-	buf := make([]byte, bytes)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
 }

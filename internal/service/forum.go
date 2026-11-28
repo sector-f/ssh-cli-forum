@@ -3,9 +3,8 @@ package service
 import "time"
 
 const (
-	RoleMember    = "member"
-	RoleModerator = "moderator"
-	RoleAdmin     = "admin"
+	RoleMember = "member"
+	RoleAdmin  = "admin"
 
 	StatusActive    = "active"
 	StatusSuspended = "suspended"
@@ -13,17 +12,12 @@ const (
 	BoardActive   = "active"
 	BoardReadOnly = "read_only"
 	BoardArchived = "archived"
-
-	ThreadOpen   = "open"
-	ThreadLocked = "locked"
-	ThreadHidden = "hidden"
 )
 
 type Invite struct {
 	Code       string
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
-	IsAdmin    bool
 	RedeemedBy string
 	RedeemedAt time.Time
 	RevokedAt  time.Time
@@ -63,10 +57,7 @@ type ThreadListing struct {
 	Author         User
 	Body           string
 	ReplyCount     int
-	IsPinned       bool
-	Status         string
 	CreatedAt      time.Time
-	UpdatedAt      time.Time
 	LastActivityAt time.Time
 }
 
@@ -76,30 +67,14 @@ type Thread struct {
 	Title          string
 	Author         User
 	Body           string
-	IsPinned       bool
-	Status         string
 	CreatedAt      time.Time
-	UpdatedAt      time.Time
 	LastActivityAt time.Time
 }
 
 type Comment struct {
-	ID        int
-	ThreadID  int
-	Author    User
-	Body      string
-	PostedAt  time.Time
-	UpdatedAt time.Time
+	ID       int
+	ThreadID int
+	Author   User
+	Body     string
+	PostedAt time.Time
 }
-
-type ModerationEntry struct {
-	ID         int
-	Actor      User
-	Action     string
-	TargetType string
-	TargetID   int
-	Reason     string
-	CreatedAt  time.Time
-}
-
-

@@ -1,14 +1,15 @@
 package sqlite
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 
 	sqlite3 "github.com/mattn/go-sqlite3"
 	"github.com/sector-f/ssh-cli-forum/internal/service"
+	"github.com/sector-f/ssh-cli-forum/internal/token"
 )
 
 func (s *Store) CreateUser(ctx context.Context, username string, pubKey []byte, inviteCode, role string) error {
@@ -45,11 +46,11 @@ func (s *Store) BootstrapAdmin(ctx context.Context, username string, pubKey []by
 		return err
 	}
 	defer tx.Rollback()
-	code, err := randomToken(24)
+	code, err := token.New(24)
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO invites (code, created_at, expires_at, is_admin) VALUES (?, ?, ?, 1)", code, nowText(), "9999-12-31T23:59:59Z"); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO invites (code, created_at, expires_at) VALUES (?, ?, ?)", code, nowText(), "9999-12-31T23:59:59Z"); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO users (username, pubkey, invite_code, role, status, created_at)
@@ -114,7 +115,7 @@ func (s *Store) AuthenticateUser(ctx context.Context, username string, givenKey 
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]service.User, error) {
-	rows, err := s.db.QueryContext(ctx, userSelect + " ORDER BY username COLLATE NOCASE")
+	rows, err := s.db.QueryContext(ctx, userSelect+" ORDER BY username COLLATE NOCASE")
 	if err != nil {
 		return nil, err
 	}
@@ -132,18 +133,6 @@ func (s *Store) ListUsers(ctx context.Context) ([]service.User, error) {
 	return users, rows.Err()
 }
 
-func (s *Store) SetUserRole(ctx context.Context, username, role string) error {
-	res, err := s.db.ExecContext(ctx, "UPDATE users SET role = ? WHERE username = ? COLLATE NOCASE", role, username)
-	if err != nil {
-		return err
-	}
-	n, err := res.RowsAffected()
-	if err == nil && n == 0 {
-		return service.ErrUserNotFound
-	}
-	return err
-}
-
 func (s *Store) SetUserStatus(ctx context.Context, username, status string) error {
 	res, err := s.db.ExecContext(ctx, "UPDATE users SET status = ? WHERE username = ? COLLATE NOCASE", status, username)
 	if err != nil {
@@ -155,7 +144,6 @@ func (s *Store) SetUserStatus(ctx context.Context, username, status string) erro
 	}
 	return err
 }
-
 
 func isUniqueConstraint(err error) bool {
 	var sqliteErr sqlite3.Error

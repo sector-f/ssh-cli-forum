@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"time"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
@@ -19,7 +18,7 @@ func (s *Store) CreateComment(ctx context.Context, threadID, authorID int, body 
 	if _, err := tx.ExecContext(ctx, "INSERT INTO comments (thread_id, author_id, body, posted_at) VALUES (?, ?, ?, ?)", threadID, authorID, body, now); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE threads SET last_activity_at = ?, updated_at = ? WHERE id = ?", now, now, threadID); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE threads SET last_activity_at = ? WHERE id = ?", now, threadID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -63,12 +62,7 @@ func (s *Store) ListCommentsPage(ctx context.Context, threadID, page, pageSize i
 	return comments, total, rows.Err()
 }
 
-func (s *Store) UpdateComment(ctx context.Context, id int, body string) error {
-	_, err := s.db.ExecContext(ctx, "UPDATE comments SET body = ?, updated_at = ? WHERE id = ?", body, nowText(), id)
-	return err
-}
-
-func (s *Store) DeleteComment(ctx context.Context, id, actorID int, reason string) error {
+func (s *Store) DeleteComment(ctx context.Context, id int) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -85,9 +79,6 @@ func (s *Store) DeleteComment(ctx context.Context, id, actorID int, reason strin
 	if _, err := tx.ExecContext(ctx, "UPDATE comments SET deleted_at = ? WHERE id = ?", nowText(), id); err != nil {
 		return err
 	}
-	if err := addModlog(ctx, tx, actorID, "reply_deleted", "comment", id, reason); err != nil {
-		return err
-	}
 	if _, err := tx.ExecContext(ctx, "UPDATE threads SET last_activity_at = ? WHERE id = ?", nowText(), threadID); err != nil {
 		return err
 	}
@@ -97,13 +88,13 @@ func (s *Store) DeleteComment(ctx context.Context, id, actorID int, reason strin
 func (s *Store) GetCommentByID(ctx context.Context, id int) (service.Comment, error) {
 	var c service.Comment
 	var authorID int
-	var posted, updated, created, last sql.NullString
+	var posted, created, last sql.NullString
 	var display, role, status string
-	err := s.db.QueryRowContext(ctx, `SELECT c.id, c.thread_id, c.author_id, c.body, c.posted_at, c.updated_at,
+	err := s.db.QueryRowContext(ctx, `SELECT c.id, c.thread_id, c.author_id, c.body, c.posted_at,
 		u.username, u.display_name, u.role, u.status, u.created_at, u.last_seen_at
 		FROM comments c JOIN users u ON u.id = c.author_id
 		WHERE c.id = ? AND c.deleted_at IS NULL`, id).Scan(
-		&c.ID, &c.ThreadID, &authorID, &c.Body, &posted, &updated,
+		&c.ID, &c.ThreadID, &authorID, &c.Body, &posted,
 		&c.Author.Username, &display, &role, &status, &created, &last)
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.Comment{}, service.ErrCommentNotFound
@@ -111,37 +102,8 @@ func (s *Store) GetCommentByID(ctx context.Context, id int) (service.Comment, er
 	if err != nil {
 		return service.Comment{}, err
 	}
-	c.PostedAt, c.UpdatedAt = parseTime(posted.String), parseTime(updated.String)
+	c.PostedAt = parseTime(posted.String)
 	c.Author.ID, c.Author.DisplayName, c.Author.Role, c.Author.Status = authorID, display, role, status
 	c.Author.CreatedAt, c.Author.LastSeenAt = parseTime(created.String), parseTime(last.String)
 	return c, nil
-}
-
-func (s *Store) ListModerationLog(ctx context.Context, limit int) ([]service.ModerationEntry, error) {
-	if limit < 1 || limit > 500 {
-		limit = 100
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.actor_id, u.username, m.action, m.target_type, m.target_id, m.reason, m.created_at
-		FROM moderation_log m JOIN users u ON u.id = m.actor_id ORDER BY m.id DESC LIMIT ?`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var entries []service.ModerationEntry
-	for rows.Next() {
-		var e service.ModerationEntry
-		var created string
-		if err := rows.Scan(&e.ID, &e.Actor.ID, &e.Actor.Username, &e.Action, &e.TargetType, &e.TargetID, &e.Reason, &created); err != nil {
-			return nil, err
-		}
-		e.CreatedAt = parseTime(created)
-		entries = append(entries, e)
-	}
-	return entries, rows.Err()
-}
-
-func addModlog(ctx context.Context, tx *sql.Tx, actorID int, action, targetType string, targetID int, reason string) error {
-	_, err := tx.ExecContext(ctx, "INSERT INTO moderation_log (actor_id, action, target_type, target_id, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-		actorID, action, targetType, targetID, reason, time.Now().UTC().Format(time.RFC3339Nano))
-	return err
 }

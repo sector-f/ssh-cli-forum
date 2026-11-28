@@ -22,10 +22,10 @@ type Session struct {
 
 func NewSession(actorID int, users UserService, boards BoardService, chat ChatService) *Session {
 	return &Session{
-		UserService: users,
+		UserService:  users,
 		BoardService: boards,
-		ChatService: chat,
-		actorID: actorID,
+		ChatService:  chat,
+		actorID:      actorID,
 	}
 }
 
@@ -39,17 +39,6 @@ func (s *Session) actor(ctx context.Context) (User, error) {
 	}
 	if user.Status == StatusSuspended {
 		return User{}, ErrUserSuspended
-	}
-	return user, nil
-}
-
-func (s *Session) requireModerator(ctx context.Context) (User, error) {
-	user, err := s.actor(ctx)
-	if err != nil {
-		return User{}, err
-	}
-	if user.Role != RoleModerator && user.Role != RoleAdmin {
-		return User{}, ErrPermissionDenied
 	}
 	return user, nil
 }
@@ -76,11 +65,11 @@ func (s *Session) requireActorID(ctx context.Context, actorID int) (User, error)
 	return user, nil
 }
 
-func (s *Session) CreateInvite(ctx context.Context, code string, expiresAt time.Time, isAdmin bool) error {
+func (s *Session) CreateInvite(ctx context.Context, code string, expiresAt time.Time) error {
 	if _, err := s.requireAdmin(ctx); err != nil {
 		return err
 	}
-	return s.UserService.CreateInvite(ctx, code, expiresAt, isAdmin)
+	return s.UserService.CreateInvite(ctx, code, expiresAt)
 }
 
 func (s *Session) ListInvites(ctx context.Context) ([]Invite, error) {
@@ -102,13 +91,6 @@ func (s *Session) ListUsers(ctx context.Context) ([]User, error) {
 		return nil, err
 	}
 	return s.UserService.ListUsers(ctx)
-}
-
-func (s *Session) SetUserRole(ctx context.Context, username, role string) error {
-	if _, err := s.requireAdmin(ctx); err != nil {
-		return err
-	}
-	return NewAccountService(s.UserService).SetUserRole(ctx, username, role)
 }
 
 func (s *Session) SetUserStatus(ctx context.Context, username, status string) error {
@@ -134,13 +116,6 @@ func (s *Session) CreateBoardWithDetails(ctx context.Context, slug, name, descri
 		return ErrPermissionDenied
 	}
 	return NewBoardManager(s.BoardService).CreateBoardWithDetails(ctx, slug, name, description, sortOrder, user.ID)
-}
-
-func (s *Session) UpdateBoard(ctx context.Context, slug, name, description string) error {
-	if _, err := s.requireAdmin(ctx); err != nil {
-		return err
-	}
-	return NewBoardManager(s.BoardService).UpdateBoard(ctx, slug, name, description)
 }
 
 func (s *Session) SetBoardStatus(ctx context.Context, slug, status string) error {
@@ -175,20 +150,7 @@ func (s *Session) CreateThreadWithBody(ctx context.Context, title, body string, 
 }
 
 func (s *Session) GetThreadByID(ctx context.Context, id int) (Thread, error) {
-	thread, err := s.BoardService.GetThreadByID(ctx, id)
-	if err != nil {
-		return Thread{}, err
-	}
-	if thread.Status == ThreadHidden {
-		user, err := s.actor(ctx)
-		if err != nil {
-			return Thread{}, err
-		}
-		if user.Role != RoleAdmin && user.Role != RoleModerator {
-			return Thread{}, ErrThreadNotFound
-		}
-	}
-	return thread, nil
+	return s.BoardService.GetThreadByID(ctx, id)
 }
 
 func (s *Session) CreateComment(ctx context.Context, threadID, authorID int, body string) error {
@@ -207,12 +169,6 @@ func (s *Session) CreateComment(ctx context.Context, threadID, authorID int, bod
 	if board.Status != BoardActive {
 		return ErrReadOnly
 	}
-	if thread.Status == ThreadLocked {
-		return ErrThreadLocked
-	}
-	if thread.Status == ThreadHidden {
-		return ErrThreadNotFound
-	}
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return ErrEmptyCommentBody
@@ -220,110 +176,34 @@ func (s *Session) CreateComment(ctx context.Context, threadID, authorID int, bod
 	return s.BoardService.CreateComment(ctx, threadID, user.ID, body)
 }
 
-func (s *Session) UpdateThread(ctx context.Context, id int, title, body string) error {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return ErrEmptyThreadTitle
-	}
+func (s *Session) DeleteThread(ctx context.Context, id int) error {
 	user, err := s.actor(ctx)
 	if err != nil {
 		return err
 	}
-	thread, err := s.BoardService.GetThreadByID(ctx, id)
+	item, err := s.BoardService.GetThreadByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	moderator := user.Role == RoleAdmin || user.Role == RoleModerator
-	if thread.Author.ID != user.ID && !moderator {
+	if item.Author.ID != user.ID {
 		return ErrPermissionDenied
 	}
-	return s.BoardService.UpdateThread(ctx, id, title, body)
+	return s.BoardService.DeleteThread(ctx, id)
 }
-
-func (s *Session) DeleteThread(ctx context.Context, id, actorID int, reason string) error {
-	user, err := s.requireActorID(ctx, actorID)
-	if err != nil {
-		return err
-	}
-	thread, err := s.BoardService.GetThreadByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	moderator := user.Role == RoleAdmin || user.Role == RoleModerator
-	if thread.Author.ID != user.ID && !moderator {
-		return ErrPermissionDenied
-	}
-	return s.BoardService.DeleteThread(ctx, id, user.ID, reason)
-}
-
-func (s *Session) SetThreadPinned(ctx context.Context, id, actorID int, pinned bool, reason string) error {
-	user, err := s.requireActorID(ctx, actorID)
-	if err != nil {
-		return err
-	}
-	if user.Role != RoleAdmin && user.Role != RoleModerator {
-		return ErrPermissionDenied
-	}
-	return s.BoardService.SetThreadPinned(ctx, id, user.ID, pinned, reason)
-}
-
-func (s *Session) SetThreadStatus(ctx context.Context, id, actorID int, status, reason string) error {
-	if status != ThreadOpen && status != ThreadLocked && status != ThreadHidden {
-		return ErrInvalidThreadStatus
-	}
-	user, err := s.requireActorID(ctx, actorID)
-	if err != nil {
-		return err
-	}
-	if user.Role != RoleAdmin && user.Role != RoleModerator {
-		return ErrPermissionDenied
-	}
-	return s.BoardService.SetThreadStatus(ctx, id, user.ID, status, reason)
-}
-
-func (s *Session) UpdateComment(ctx context.Context, id int, body string) error {
-	body = strings.TrimSpace(body)
-	if body == "" {
-		return ErrEmptyCommentBody
-	}
+func (s *Session) DeleteComment(ctx context.Context, id int) error {
 	user, err := s.actor(ctx)
 	if err != nil {
 		return err
 	}
-	comment, err := s.BoardService.GetCommentByID(ctx, id)
+	item, err := s.BoardService.GetCommentByID(ctx, id)
 	if err != nil {
 		return err
 	}
-	moderator := user.Role == RoleAdmin || user.Role == RoleModerator
-	if comment.Author.ID != user.ID && !moderator {
+	if item.Author.ID != user.ID {
 		return ErrPermissionDenied
 	}
-	return s.BoardService.UpdateComment(ctx, id, body)
+	return s.BoardService.DeleteComment(ctx, id)
 }
-
-func (s *Session) DeleteComment(ctx context.Context, id, actorID int, reason string) error {
-	user, err := s.requireActorID(ctx, actorID)
-	if err != nil {
-		return err
-	}
-	comment, err := s.BoardService.GetCommentByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	moderator := user.Role == RoleAdmin || user.Role == RoleModerator
-	if comment.Author.ID != user.ID && !moderator {
-		return ErrPermissionDenied
-	}
-	return s.BoardService.DeleteComment(ctx, id, user.ID, reason)
-}
-
-func (s *Session) ListModerationLog(ctx context.Context, limit int) ([]ModerationEntry, error) {
-	if _, err := s.requireModerator(ctx); err != nil {
-		return nil, err
-	}
-	return s.BoardService.ListModerationLog(ctx, limit)
-}
-
 func (s *Session) RecentMessages(ctx context.Context, channelSlug string, limit int) ([]ChatMessage, error) {
 	if s.ChatService == nil {
 		return nil, errors.New("chat is unavailable")
@@ -334,7 +214,7 @@ func (s *Session) RecentMessages(ctx context.Context, channelSlug string, limit 
 	return s.ChatService.RecentMessages(ctx, channelSlug, limit)
 }
 
-func (s *Session) PostMessage(ctx context.Context, channelSlug string, userID int, kind ChatMessageKind, body string) (ChatMessage, error) {
+func (s *Session) PostMessage(ctx context.Context, channelSlug string, userID int, body string) (ChatMessage, error) {
 	if s.ChatService == nil {
 		return ChatMessage{}, errors.New("chat is unavailable")
 	}
@@ -354,10 +234,7 @@ func (s *Session) PostMessage(ctx context.Context, channelSlug string, userID in
 			return ChatMessage{}, ErrChatMessageInvalid
 		}
 	}
-	if kind != ChatMessageText && kind != ChatMessageAction {
-		return ChatMessage{}, ErrChatMessageInvalid
-	}
-	return s.ChatService.PostMessage(ctx, channelSlug, user.ID, kind, body)
+	return s.ChatService.PostMessage(ctx, channelSlug, user.ID, body)
 }
 
 func (s *Session) Subscribe(ctx context.Context, channelSlug string) (<-chan ChatMessage, func()) {

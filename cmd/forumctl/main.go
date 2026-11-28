@@ -34,7 +34,7 @@ func main() {
 	}
 	root.PersistentFlags().StringVar(&dbPath, "db", "./forum.db", "Path to the SQLite database")
 
-	root.AddCommand(dbCommand(), adminCommand(), boardCommand(), inviteCommand(), userCommand(), moderationCommand())
+	root.AddCommand(dbCommand(), adminCommand(), boardCommand(), inviteCommand(), userCommand())
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
@@ -178,20 +178,7 @@ func boardCommand() *cobra.Command {
 			})
 		},
 	}
-	update := &cobra.Command{
-		Use: "update <slug> <name> <description>", Short: "Update board metadata",
-		Args: cobra.ExactArgs(3),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Store) error {
-				if err := service.NewBoardManager(s).UpdateBoard(cmd.Context(), args[0], args[1], args[2]); err != nil {
-					return err
-				}
-				fmt.Println("Board updated.")
-				return nil
-			})
-		},
-	}
-	cmd.AddCommand(create, list, update, boardStatusCommand("archive", service.BoardArchived), boardStatusCommand("restore", service.BoardActive))
+	cmd.AddCommand(create, list, boardStatusCommand("archive", service.BoardArchived))
 	return cmd
 }
 
@@ -214,7 +201,6 @@ func boardStatusCommand(name, status string) *cobra.Command {
 func inviteCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "invite", Short: "Manage invitation codes"}
 	var duration time.Duration
-	var admin bool
 	create := &cobra.Command{
 		Use: "create", Short: "Generate a new invitation code",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -227,16 +213,15 @@ func inviteCommand() *cobra.Command {
 			}
 			expires := time.Now().Add(duration)
 			return withDB(func(s *sqlite.Store) error {
-				if err := service.NewAccountService(s).CreateInvite(cmd.Context(), code, expires, admin); err != nil {
+				if err := service.NewAccountService(s).CreateInvite(cmd.Context(), code, expires); err != nil {
 					return err
 				}
-				fmt.Printf("Invitation created\nCode:    %s\nExpires: %s\nAdmin:   %t\n", code, expires.UTC().Format(time.RFC3339), admin)
+				fmt.Printf("Invitation created\nCode:    %s\nExpires: %s\n", code, expires.UTC().Format(time.RFC3339))
 				return nil
 			})
 		},
 	}
 	create.Flags().DurationVar(&duration, "expires-in", 7*24*time.Hour, "Invitation lifetime (e.g. 168h)")
-	create.Flags().BoolVar(&admin, "admin", false, "Grant administrator role on registration")
 	list := &cobra.Command{
 		Use: "list", Short: "List invitations",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -255,7 +240,7 @@ func inviteCommand() *cobra.Command {
 					} else if time.Now().After(i.ExpiresAt) {
 						status = "expired"
 					}
-					fmt.Printf("%s | %s | expires %s | admin=%t\n", i.Code, status, i.ExpiresAt.UTC().Format(time.RFC3339), i.IsAdmin)
+					fmt.Printf("%s | %s | expires %s\n", i.Code, status, i.ExpiresAt.UTC().Format(time.RFC3339))
 				}
 				return nil
 			})
@@ -296,19 +281,6 @@ func userCommand() *cobra.Command {
 			})
 		},
 	})
-	cmd.AddCommand(&cobra.Command{
-		Use: "set-role <username> <member|moderator|admin>", Short: "Change a user's role",
-		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Store) error {
-				if err := service.NewAccountService(s).SetUserRole(cmd.Context(), args[0], args[1]); err != nil {
-					return err
-				}
-				fmt.Printf("Updated %s role to %s.\n", args[0], args[1])
-				return nil
-			})
-		},
-	})
 	cmd.AddCommand(userStatusCommand("suspend", service.StatusSuspended), userStatusCommand("activate", service.StatusActive))
 	return cmd
 }
@@ -323,24 +295,6 @@ func userStatusCommand(name, status string) *cobra.Command {
 					return err
 				}
 				fmt.Printf("Updated %s status to %s.\n", args[0], status)
-				return nil
-			})
-		},
-	}
-}
-
-func moderationCommand() *cobra.Command {
-	return &cobra.Command{
-		Use: "modlog", Short: "Display recent moderation actions",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return withDB(func(s *sqlite.Store) error {
-				entries, err := s.ListModerationLog(cmd.Context(), 100)
-				if err != nil {
-					return err
-				}
-				for _, e := range entries {
-					fmt.Printf("%s | %s | %s #%d | %s | %s\n", e.CreatedAt.Format(time.RFC3339), e.Action, e.TargetType, e.TargetID, e.Actor.Username, e.Reason)
-				}
 				return nil
 			})
 		},

@@ -35,14 +35,6 @@ func (m *BoardManager) CreateBoardWithDetails(ctx context.Context, slug, name, d
 	return m.boards.CreateBoardWithDetails(ctx, slug, name, description, sortOrder, createdBy)
 }
 
-func (m *BoardManager) UpdateBoard(ctx context.Context, slug, name, description string) error {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return ErrEmptyBoardName
-	}
-	return m.boards.UpdateBoard(ctx, slug, name, description)
-}
-
 func (m *BoardManager) SetBoardStatus(ctx context.Context, slug, status string) error {
 	if status != BoardActive && status != BoardReadOnly && status != BoardArchived {
 		return ErrInvalidBoardStatus
