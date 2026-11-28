@@ -95,14 +95,9 @@ func commandRegistry() []command {
 			Handler: commandCall(func(m *sessionModel, args []string) { m.changeDirectory(args) }),
 		},
 		{
-			Name: "show", Group: "Navigation", Description: "Display the current resource's content, when available.",
-			Handler: commandCall(func(m *sessionModel, args []string) {
-				if len(args) != 0 {
-					m.addOutput("Usage: show")
-					return
-				}
-				m.showCurrent()
-			}),
+			Name: "show", Group: "Navigation", Description: "Display content for the current resource or a path.",
+			Arguments: []commandArgument{{Name: "path", Description: "Location to display; defaults to the current location.", Optional: true, Completion: completionLocations}},
+			Handler: commandCall(func(m *sessionModel, args []string) { m.showLocation(args) }),
 		},
 		{
 			Name: "recent", Group: "Navigation", Description: "List recently active topics.",

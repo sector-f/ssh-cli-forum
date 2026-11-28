@@ -34,6 +34,7 @@ var (
 	_ directory        = (*rootDirectory)(nil)
 	_ directory        = (*boardsDirectory)(nil)
 	_ directory        = (*boardObject)(nil)
+	_ displayable      = (*boardsDirectory)(nil)
 	_ displayable      = (*boardObject)(nil)
 	_ displayable      = (*topicObject)(nil)
 	_ filesystemObject = (*topicObject)(nil)
@@ -89,6 +90,31 @@ func (rootDirectory) ReadDir(_ virtualFilesystem) ([]filesystemEntry, error) {
 type boardsDirectory struct{}
 
 func (boardsDirectory) Commands() []command { return nil }
+
+// Display returns the board listing in the same tabular format used by the
+// former board-list command.
+func (boardsDirectory) Display(fs virtualFilesystem) (string, error) {
+	if fs.model == nil || fs.model.boards == nil {
+		return "", fmt.Errorf("forum service is unavailable")
+	}
+	boards, err := fs.model.boards.ListBoards(fs.model.ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(boards) == 0 {
+		return "No boards have been created.", nil
+	}
+
+	var content strings.Builder
+	content.WriteString("SLUG                 BOARD                         STATUS\n")
+	for _, board := range boards {
+		fmt.Fprintf(&content, "%-20s %-29s %s\n", board.Slug, board.Name, board.Status)
+		if board.Description != "" {
+			fmt.Fprintf(&content, "  %s\n", board.Description)
+		}
+	}
+	return strings.TrimRight(content.String(), "\n"), nil
+}
 
 func (boardsDirectory) Lookup(fs virtualFilesystem, name string) (filesystemObject, error) {
 	board, err := fs.model.boards.GetBoardBySlug(fs.model.ctx, name)
@@ -158,18 +184,53 @@ func (l boardObject) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) {
 	return entries, nil
 }
 
-// Display returns the board's own metadata. Its topics remain separate child
-// entries and are shown by ls rather than being folded into this content.
-func (l boardObject) Display(_ virtualFilesystem) (string, error) {
-	lines := []string{
-		l.board.Name,
-		"Slug: " + l.board.Slug,
-		"Status: " + l.board.Status,
+// Display returns the board metadata followed by its topics. The directory
+// entries remain independently available through ls and path navigation.
+func (l boardObject) Display(fs virtualFilesystem) (string, error) {
+	if fs.model == nil || fs.model.boards == nil {
+		return "", fmt.Errorf("forum service is unavailable")
 	}
+
+	var content strings.Builder
 	if l.board.Description != "" {
-		lines = append(lines, "", l.board.Description)
+		fmt.Fprintf(&content, "%s — %s\n", l.board.Name, l.board.Description)
+	} else {
+		content.WriteString(l.board.Name + "\n")
 	}
-	return strings.Join(lines, "\n"), nil
+	fmt.Fprintf(&content, "Board status: %s\n", l.board.Status)
+
+	const pageSize = 100
+	var threads []service.ThreadListing
+	total := 0
+	for page := 1; ; page++ {
+		nextPage, pageTotal, err := fs.model.boards.ListThreadsPage(fs.model.ctx, l.board.ID, page, pageSize)
+		if err != nil {
+			return "", err
+		}
+		if pageTotal > total {
+			total = pageTotal
+		}
+		threads = append(threads, nextPage...)
+		if len(threads) >= total || len(nextPage) == 0 {
+			break
+		}
+	}
+
+	if len(threads) == 0 {
+		content.WriteString("No topics found.")
+		return strings.TrimRight(content.String(), "\n"), nil
+	}
+
+	content.WriteString("ID    TOPIC                                            REPLIES  LAST ACTIVITY\n")
+	for _, thread := range threads {
+		title := thread.Title
+		if len(title) > 46 {
+			title = title[:43] + "..."
+		}
+		fmt.Fprintf(&content, "%-4d  %-46s %7d  %s\n",
+			thread.ID, title, thread.ReplyCount, relativeTime(thread.LastActivityAt))
+	}
+	return strings.TrimRight(content.String(), "\n"), nil
 }
 
 type topicObject struct {

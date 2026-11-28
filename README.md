@@ -39,8 +39,9 @@ The main interface is command-oriented and does not use Bubble Tea's alternate s
 
 - `ls [path]` lists the immediate entries in a directory, including both child directories and resources; it does not recurse.
 - `cd <path>` changes the current location without displaying it. `pwd` prints the current path.
-- `show` displays the current resource's own content when that resource supports it. It does not list child entries.
-- `/boards` contains board directories. A board is both a directory and a displayable resource: `ls` lists its topic IDs, while `show` displays its name, description, and status.
+- `show [path]` displays the current resource's content, or the content at the supplied path. Relative paths start at the current location; absolute paths start at the root.
+- `/boards` is a displayable board listing. `show /boards` displays the board slug, name, and status; `ls /boards` lists the board directories.
+- A board at `/boards/<slug>` is both a directory and a displayable resource: `show` displays its description, status, and topics, while `ls` lists its topic IDs.
 - `/boards/<slug>/<topic-id>` is a topic resource; `show` displays its opening post and replies.
 - `new` creates a topic from inside a board.
 - `reply` adds a reply from inside a topic.
