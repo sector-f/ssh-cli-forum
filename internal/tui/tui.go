@@ -35,9 +35,10 @@ type sessionModel struct {
 	chat    service.ChatService
 	user    service.User
 
-	location location
-	input  textinput.Model
-	output []string
+	location       *pathNode
+	filesystemRoot *pathNode
+	input          textinput.Model
+	output         []string
 
 	commandHistory []string
 	historyIndex   int
@@ -91,9 +92,10 @@ func NewProgram(sess ssh.Session, userService service.UserService, boardService 
 	if chatService != nil {
 		chatService = appSession
 	}
+	filesystemRoot := &pathNode{object: rootDirectory{}}
 	m := &sessionModel{
 		session: sess, ctx: sess.Context(), users: appSession, boards: appSession, chat: chatService, user: user,
-		location: rootLocation{}, input: input, chatInput: chatInput, chatViewport: chatViewport,
+		location: filesystemRoot, filesystemRoot: filesystemRoot, input: input, chatInput: chatInput, chatViewport: chatViewport,
 		windowWidth: 80, windowHeight: 24,
 		output: []string{
 			"SSH Community",
@@ -694,21 +696,43 @@ func (m *sessionModel) listLocation(args []string) {
 	m.displayLocation(target)
 }
 
-func (m *sessionModel) displayLocation(target location) {
-	switch target := target.(type) {
-	case rootLocation:
-		m.addOutput("boards/")
-	case boardsLocation:
-		boards, err := m.boards.ListBoards(m.ctx)
+func (m *sessionModel) displayLocation(target *pathNode) {
+	switch object := target.object.(type) {
+	case rootDirectory:
+		children, err := m.filesystem().Children(target)
 		if err != nil {
 			m.fail(err)
 			return
 		}
+		for _, child := range children {
+			name := child.name
+			if isDirectory(child.object) {
+				name += "/"
+			}
+			m.addOutput(name)
+		}
+	case boardsDirectory:
+		children, err := m.filesystem().Children(target)
+		if err != nil {
+			m.fail(err)
+			return
+		}
+		boards := make([]service.BoardListing, 0, len(children))
+		for _, child := range children {
+			board, ok := child.object.(boardObject)
+			if !ok {
+				continue
+			}
+			boards = append(boards, service.BoardListing{
+				ID: board.board.ID, Slug: board.board.Slug, Name: board.board.Name,
+				Description: board.board.Description, Status: board.board.Status,
+			})
+		}
 		m.printBoards(boards)
-	case boardLocation:
-		m.printBoardTopics(target.board.Slug, 1)
-	case threadLocation:
-		m.displayThread(target.id, 1)
+	case boardObject:
+		m.printBoardTopics(object.board.Slug, 1)
+	case topicObject:
+		m.displayThread(object.id, 1)
 	default:
 		m.addOutput("No such location.")
 	}
@@ -769,7 +793,7 @@ func (m *sessionModel) printBoardTopics(slug string, page int) {
 }
 
 func (m *sessionModel) listTopics(args []string) {
-	board, ok := m.currentBoardLocation()
+	board, ok := m.currentBoard()
 	if !ok {
 		m.addOutput("'topics' is only available inside a board.")
 		return
@@ -824,13 +848,18 @@ func (m *sessionModel) showCurrent(args []string) {
 			m.fail(err)
 			return
 		}
-		// An explicit topic ID navigates to its owning board before opening it.
-		m.location = threadLocation{id: id, parent: boardLocation{board: board}}
+		// An explicit topic ID navigates through its canonical filesystem path.
+		target, err := m.filesystem().Resolve(m.filesystem().Root(), fmt.Sprintf("/boards/%s/%d", board.Slug, id))
+		if err != nil {
+			m.fail(err)
+			return
+		}
+		m.location = target
 		m.displayThread(id, page)
 		return
 	}
 
-	current, ok := m.currentThreadLocation()
+	current, ok := m.currentTopic()
 	if !ok {
 		m.fail(fmt.Errorf("show requires a topic ID unless already inside a topic"))
 		return
@@ -887,7 +916,7 @@ func (m *sessionModel) changeDirectory(args []string) {
 }
 
 func (m *sessionModel) startNewTopic() {
-	currentBoard, ok := m.currentBoardLocation()
+	currentBoard, ok := m.currentBoard()
 	if !ok {
 		m.addOutput("'new' is only available inside a board.")
 		return
@@ -908,7 +937,7 @@ func (m *sessionModel) startNewTopic() {
 }
 
 func (m *sessionModel) startReply() {
-	thread, ok := m.currentThreadLocation()
+	thread, ok := m.currentTopic()
 	if !ok {
 		m.addOutput("'reply' is only available inside a topic.")
 		return
@@ -956,7 +985,7 @@ func (m *sessionModel) finishComposition() {
 	body := strings.Join(m.draftLines, "\n")
 	switch m.compose {
 	case composeNewBody:
-		board, ok := m.currentBoardLocation()
+		board, ok := m.currentBoard()
 		if !ok {
 			m.fail(fmt.Errorf("new is only available inside a board"))
 			break
@@ -971,7 +1000,12 @@ func (m *sessionModel) finishComposition() {
 			break
 		}
 		m.addOutput(fmt.Sprintf("Topic created: #%d", threadID))
-		m.location = threadLocation{id: threadID, parent: board}
+		target, err := m.filesystem().Resolve(m.currentLocation(), strconv.Itoa(threadID))
+		if err != nil {
+			m.fail(err)
+			return
+		}
+		m.location = target
 		m.displayThread(threadID, 1)
 	case composeReplyBody:
 		err := m.boards.CreateComment(m.ctx, m.draftThreadID, m.user.ID, body)
@@ -1009,8 +1043,8 @@ func (m *sessionModel) deleteOwnTopic(args []string) {
 		return
 	}
 	m.addOutput("Topic deleted.")
-	if current, ok := m.currentThreadLocation(); ok && current.id == id {
-		m.location = current.Parent()
+	if current, ok := m.currentTopic(); ok && current.id == id {
+		m.location = m.currentLocation().Parent()
 	}
 }
 
@@ -1041,7 +1075,7 @@ func (m *sessionModel) targetID(args []string) (int, error) {
 		}
 	}
 	if len(args) == 0 {
-		if current, ok := m.currentThreadLocation(); ok {
+		if current, ok := m.currentTopic(); ok {
 			return current.id, nil
 		}
 		return 0, fmt.Errorf("delete-topic requires a topic ID outside a topic location")

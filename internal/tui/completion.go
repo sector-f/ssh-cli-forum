@@ -122,7 +122,7 @@ func (m *sessionModel) locationCandidates(prefix string) []string {
 	candidates := []string{".."}
 	for _, entry := range entries {
 		name := entry.name
-		if isDirectory(entry.location) {
+		if isDirectory(entry.object) {
 			name += "/"
 		}
 		candidates = append(candidates, name)

@@ -238,7 +238,7 @@ func commandPermissionName(permission commandPermission) string {
 
 func (m *sessionModel) contextCommands() []command {
 	commands := commandRegistry()
-	local := m.currentLocation().Commands()
+	local := m.currentLocation().object.Commands()
 
 	// Location-local commands shadow same-named global commands. The topic
 	// form of delete-topic defaults to the current topic; the global form

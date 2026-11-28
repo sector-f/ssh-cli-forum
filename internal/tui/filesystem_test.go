@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"testing"
@@ -8,50 +9,62 @@ import (
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
 
-func TestFilesystemResolveUsesTypedParents(t *testing.T) {
-	fs := virtualFilesystem{}
+func TestFilesystemResolveBuildsPathsOutsideObjects(t *testing.T) {
+	root := &pathNode{object: rootDirectory{}}
+	fs := virtualFilesystem{root: root}
 
-	got, err := fs.Resolve(rootLocation{}, "/boards")
+	boards, err := fs.Resolve(root, "/boards")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := got.(boardsLocation); !ok {
-		t.Fatalf("Resolve(/boards) returned %T, want boardsLocation", got)
+	if _, ok := boards.object.(boardsDirectory); !ok {
+		t.Fatalf("Resolve(/boards) returned %T, want boardsDirectory", boards.object)
+	}
+	if boards.Path() != "/boards" || boards.Parent() != root {
+		t.Fatalf("boards path node has unexpected path or parent: path=%q parent=%p", boards.Path(), boards.Parent())
 	}
 
-	got, err = fs.Resolve(got, "..")
-	if err != nil {
-		t.Fatal(err)
+	board := boardObject{board: service.Board{ID: 7, Slug: "general"}}
+	boardPath := &pathNode{name: "general", object: board, parent: boards}
+	topic := topicObject{id: 42}
+	topicPath := &pathNode{name: "42", object: topic, parent: boardPath}
+
+	if boardPath.Path() != "/boards/general" || topicPath.Path() != "/boards/general/42" {
+		t.Fatalf("unexpected paths: board=%q topic=%q", boardPath.Path(), topicPath.Path())
 	}
-	if got.Path() != "/" {
-		t.Fatalf("parent of /boards = %s, want /", got.Path())
+	if topicPath.Parent() != boardPath || boardPath.Parent() != boards {
+		t.Fatal("path tree did not preserve parent links")
 	}
 
-	board := boardLocation{board: service.Board{ID: 7, Slug: "general"}}
-	topic := threadLocation{id: 42, parent: board}
-	got, err = fs.Resolve(topic, "..")
-	if err != nil {
-		t.Fatal(err)
+	// The resource values do not contain path or parent state.
+	if got := board.board.Slug; got != "general" {
+		t.Fatalf("board object changed unexpectedly: %q", got)
 	}
-	if got.Path() != board.Path() {
-		t.Fatalf("parent of %s = %s, want %s", topic.Path(), got.Path(), board.Path())
+	if topic.id != 42 {
+		t.Fatalf("topic object changed unexpectedly: %d", topic.id)
 	}
 }
 
 func TestFilesystemResolveDoesNotTraverseThroughTopic(t *testing.T) {
 	fs := virtualFilesystem{}
-	topic := threadLocation{
-		id: 42,
-		parent: boardLocation{board: service.Board{ID: 7, Slug: "general"}},
+	root := fs.Root()
+	boards := &pathNode{name: "boards", object: boardsDirectory{}, parent: root}
+	board := &pathNode{
+		name: "general", object: boardObject{board: service.Board{ID: 7, Slug: "general"}},
+		parent: boards,
 	}
+	topic := &pathNode{name: "42", object: topicObject{id: 42}, parent: board}
+
 	if _, err := fs.Resolve(topic, "replies"); err == nil {
-		t.Fatal("expected a topic location to reject child traversal")
+		t.Fatal("expected a topic object to reject child traversal")
 	}
 }
 
-func TestFilesystemResolveNormalizesParentTraversalByWalkingTree(t *testing.T) {
+func TestFilesystemResolveNormalizesParentTraversalByWalkingPathTree(t *testing.T) {
 	fs := virtualFilesystem{}
-	got, err := fs.Resolve(rootLocation{}, "boards/..")
+	root := fs.Root()
+
+	got, err := fs.Resolve(root, "boards/..")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,10 +72,13 @@ func TestFilesystemResolveNormalizesParentTraversalByWalkingTree(t *testing.T) {
 		t.Fatalf("Resolve(boards/..) = %s, want /", got.Path())
 	}
 
-	topic := threadLocation{
-		id: 42,
-		parent: boardLocation{board: service.Board{ID: 7, Slug: "general"}},
+	boards := &pathNode{name: "boards", object: boardsDirectory{}, parent: root}
+	board := &pathNode{
+		name: "general", object: boardObject{board: service.Board{ID: 7, Slug: "general"}},
+		parent: boards,
 	}
+	topic := &pathNode{name: "42", object: topicObject{id: 42}, parent: board}
+
 	got, err = fs.Resolve(topic, "../..")
 	if err != nil {
 		t.Fatal(err)
@@ -82,13 +98,15 @@ func TestFilesystemResolveNormalizesParentTraversalByWalkingTree(t *testing.T) {
 
 func TestFilesystemTraversalUsesDirectoryInterface(t *testing.T) {
 	fs := virtualFilesystem{}
+	root := fs.Root()
 
-	custom := testDirectoryLocation{name: "custom", parent: rootLocation{}}
-	nested := testDirectoryLocation{name: "nested", parent: custom}
-	leaf := testLeafLocation{name: "leaf", parent: nested}
-	nested.children = map[string]location{"leaf": leaf}
-	custom.children = map[string]location{"nested": nested}
+	customObject := testDirectoryObject{}
+	nestedObject := testDirectoryObject{}
+	leafObject := testLeafObject{}
+	nestedObject.children = map[string]filesystemObject{"leaf": leafObject}
+	customObject.children = map[string]filesystemObject{"nested": nestedObject}
 
+	custom := &pathNode{name: "custom", object: customObject, parent: root}
 	got, err := fs.Resolve(custom, "nested/leaf")
 	if err != nil {
 		t.Fatal(err)
@@ -105,35 +123,59 @@ func TestFilesystemTraversalUsesDirectoryInterface(t *testing.T) {
 		t.Fatalf("Children(custom) = %#v, want nested entry", entries)
 	}
 
-	parent, err := fs.Resolve(leaf, "..")
+	parent, err := fs.Resolve(got, "..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parent.Path() != nested.Path() {
-		t.Fatalf("parent of %s = %s, want %s", leaf.Path(), parent.Path(), nested.Path())
+	if parent.Path() != "/custom/nested" {
+		t.Fatalf("parent of %s = %s, want /custom/nested", got.Path(), parent.Path())
+	}
+}
+
+func TestBoardsDirectoryReadsCurrentBoardsOnEveryListing(t *testing.T) {
+	boards := &testBoardService{
+		boards: []service.BoardListing{{
+			ID: 1, Slug: "general", Name: "General", Description: "General discussion", Status: service.BoardActive,
+		}},
+	}
+	model := &sessionModel{boards: boards}
+	fs := virtualFilesystem{model: model}
+	root := fs.Root()
+	boardsPath := &pathNode{name: "boards", object: boardsDirectory{}, parent: root}
+
+	first, err := fs.Children(boardsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 1 || first[0].Path() != "/boards/general" {
+		t.Fatalf("first listing = %#v, want /boards/general", first)
+	}
+
+	boards.boards = append(boards.boards, service.BoardListing{
+		ID: 2, Slug: "development", Name: "Development", Status: service.BoardActive,
+	})
+	second, err := fs.Children(boardsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 2 || second[1].Path() != "/boards/development" {
+		t.Fatalf("second listing did not reflect the added board: %#v", second)
 	}
 }
 
 func TestFilesystemDoesNotExposeRecentAsAnAlternateTopicPath(t *testing.T) {
-	if _, err := (virtualFilesystem{}).Resolve(rootLocation{}, "/recent/42"); err == nil {
-		t.Fatal("expected /recent to be absent from the canonical location tree")
+	if _, err := (virtualFilesystem{}).Resolve(nil, "/recent/42"); err == nil {
+		t.Fatal("expected /recent to be absent from the filesystem tree")
 	}
 }
 
-type testDirectoryLocation struct {
-	name     string
-	parent   location
-	children map[string]location
+type testDirectoryObject struct {
+	children map[string]filesystemObject
 }
 
-func (l testDirectoryLocation) Path() string {
-	return path.Join(l.parent.Path(), l.name)
-}
+func (testDirectoryObject) Commands() []command { return nil }
 
-func (l testDirectoryLocation) Parent() location  { return l.parent }
-func (testDirectoryLocation) Commands() []command { return nil }
-
-func (l testDirectoryLocation) Lookup(_ virtualFilesystem, name string) (location, error) {
+func (l testDirectoryObject) Lookup(_ virtualFilesystem, name string) (filesystemObject, error) {
 	child, ok := l.children[name]
 	if !ok {
 		return nil, fmt.Errorf("no such test child: %s", name)
@@ -141,22 +183,31 @@ func (l testDirectoryLocation) Lookup(_ virtualFilesystem, name string) (locatio
 	return child, nil
 }
 
-func (l testDirectoryLocation) ReadDir(_ virtualFilesystem) ([]locationEntry, error) {
-	entries := make([]locationEntry, 0, len(l.children))
+func (l testDirectoryObject) ReadDir(_ virtualFilesystem) ([]filesystemEntry, error) {
+	entries := make([]filesystemEntry, 0, len(l.children))
 	for name, child := range l.children {
-		entries = append(entries, locationEntry{name: name, location: child})
+		entries = append(entries, filesystemEntry{name: name, object: child})
 	}
 	return entries, nil
 }
 
-type testLeafLocation struct {
-	name   string
-	parent location
+type testLeafObject struct{}
+
+func (testLeafObject) Commands() []command { return nil }
+
+type testBoardService struct {
+	service.BoardService
+	boards []service.BoardListing
 }
 
-func (l testLeafLocation) Path() string {
-	return path.Join(l.parent.Path(), l.name)
+func (s *testBoardService) ListBoards(context.Context) ([]service.BoardListing, error) {
+	return append([]service.BoardListing(nil), s.boards...), nil
 }
 
-func (l testLeafLocation) Parent() location  { return l.parent }
-func (testLeafLocation) Commands() []command { return nil }
+func TestPathNodeUsesStandardPathJoining(t *testing.T) {
+	root := &pathNode{object: rootDirectory{}}
+	child := &pathNode{name: "boards", object: boardsDirectory{}, parent: root}
+	if got, want := path.Join(child.Parent().Path(), child.name), "/boards"; got != want {
+		t.Fatalf("joined path = %q, want %q", got, want)
+	}
+}
