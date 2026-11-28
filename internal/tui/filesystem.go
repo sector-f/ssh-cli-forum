@@ -5,6 +5,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sector-f/ssh-cli-forum/internal/service"
 )
@@ -39,9 +40,54 @@ var (
 	_ directory   = (*boardObject)(nil)
 	_ displayable = (*boardObject)(nil)
 
-	_ displayable      = (*topicObject)(nil)
-	_ filesystemObject = (*topicObject)(nil)
+	_ displayable = (*topicObject)(nil)
+
+	_ directory = (*usersDirectory)(nil)
+
+	_ displayable = (*userObject)(nil)
 )
+
+type usersDirectory struct{}
+
+func (d usersDirectory) Commands() []command { return nil }
+
+func (d usersDirectory) Lookup(fs virtualFilesystem, name string) (filesystemObject, error) {
+	user, err := fs.model.users.GetUserByUsername(fs.model.ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return userObject{user: user}, nil
+}
+
+func (d usersDirectory) ReadDir(fs virtualFilesystem) ([]filesystemEntry, error) {
+	users, err := fs.model.users.ListUsers(fs.model.ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]filesystemEntry, 0, len(users))
+	for _, user := range users {
+		entries = append(entries, filesystemEntry{
+			name:   user.Username,
+			object: userObject{user: user},
+		})
+	}
+	return entries, nil
+}
+
+type userObject struct {
+	user service.User
+}
+
+func (u userObject) Commands() []command { return nil }
+
+func (u userObject) Display(fs virtualFilesystem) (string, error) {
+	return fmt.Sprintf(
+		"Username: %s\nCreated at: %s\n",
+		u.user.Username,
+		u.user.CreatedAt.Format(time.DateTime),
+	), nil
+}
 
 // pathNode is one name in the virtual filesystem tree. The same object can be
 // wrapped by different nodes without the object carrying path or parent state.
@@ -80,14 +126,21 @@ type rootDirectory struct{}
 func (rootDirectory) Commands() []command { return nil }
 
 func (rootDirectory) Lookup(_ virtualFilesystem, name string) (filesystemObject, error) {
-	if name == "boards" {
+	switch name {
+	case "boards":
 		return boardsDirectory{}, nil
+	case "users":
+		return usersDirectory{}, nil
+	default:
+		return nil, fmt.Errorf("no such entry: %s", name)
 	}
-	return nil, fmt.Errorf("no such entry: %s", name)
 }
 
 func (rootDirectory) ReadDir(_ virtualFilesystem) ([]filesystemEntry, error) {
-	return []filesystemEntry{{name: "boards", object: boardsDirectory{}}}, nil
+	return []filesystemEntry{
+		{name: "boards", object: boardsDirectory{}},
+		{name: "users", object: usersDirectory{}},
+	}, nil
 }
 
 type boardsDirectory struct{}
